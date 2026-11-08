@@ -1,8 +1,11 @@
-// The tech: Squawk's floor tech, a gull in an azure hard hat. Off duty it stands at its post
-// on the east side of the hall, between the spines. On duty (T) it walks the cheapest route
-// (nav.ts: Dijkstra on the floor grid) to the nearest failed or degraded node or part, works on
-// it for a few seconds, marks it repaired, and walks on to the nearest one left. With nothing
-// left to fix it goes back to its post.
+// The tech: Squawk's floor tech, a gull in an azure hard hat. Off duty it waits at its desk in
+// the office off the east side of the hall (or, without an office, at its post between the
+// spines). On duty (T) it goes out through the entrance's two interlocked doors (airlock.ts:
+// the second opens only once the first has shut), walks the cheapest route (nav.ts: Dijkstra
+// on the floor grid) to the nearest failed or degraded node or part, works on it for a few
+// seconds, marks it repaired, and walks on to the nearest one left. With nothing left to fix it
+// goes back through both doors to its desk. The hall and the office are separate floor grids;
+// the doors are the only way between them, and once it has started through it sees it through.
 //
 // What counts as broken is whatever the world in the store says (the backend's tables, in live
 // mode), and marking something repaired is an ordinary state change: in live mode the backend
@@ -13,6 +16,7 @@
 // runs it without a screen.
 
 import type { PartState } from '../model/types';
+import type { Airlock, DoorIndex } from './airlock';
 import { approach, standFacing, stepToward, type GullState } from './gait';
 import { ROW_X1, hotAisleZ } from './layout';
 import { planRoute, type NavGrid, type Option, type Point, type Repair, type Route, type Spot } from './nav';
@@ -27,7 +31,8 @@ export const RETRY_AFTER = 10;
 /** Asked twice and still broken (the backend refused?): it leaves it until it next goes on duty. */
 const TRIES = 2;
 
-export type TechPhase = 'idle' | 'walking' | 'turning' | 'working';
+export type TechPhase = 'idle' | 'walking' | 'turning' | 'working' | 'doors';
+export type TechZone = 'hall' | 'office';
 
 /** The slice of the world the tech looks at. */
 export interface TechWorld {
@@ -35,8 +40,23 @@ export interface TechWorld {
   nodeState: Record<string, PartState>;
 }
 
-export interface TechOptions {
+/** The office and the way to it. */
+export interface TechOffice {
   grid: NavGrid;
+  /** Where it waits off duty. */
+  desk: Spot;
+  doors: Airlock;
+  /** Where it waits for door 0 (in the hall), between the doors, and where it waits for door 1 (in the office). */
+  hallSide: Point;
+  middle: Point;
+  officeSide: Point;
+}
+
+export interface TechOptions {
+  /** The hall's floor. */
+  grid: NavGrid;
+  /** With an office, the tech starts at its desk and goes home there; without one, to `post`. */
+  office?: TechOffice;
   gull: GullState;
   /** Where it can stand to work on a repair (nav.ts spotsFor, cached). */
   spots: (r: Repair) => Spot[];
@@ -50,6 +70,7 @@ export interface TechOptions {
 export interface Tech {
   readonly gull: GullState;
   readonly phase: TechPhase;
+  readonly zone: TechZone;
   /** What it is walking to or working on; null when idle or on its way back to the post. */
   readonly job: Repair | null;
   readonly spot: Spot | null;
@@ -73,16 +94,20 @@ export function brokenIn(world: TechWorld): Repair[] {
 }
 
 export function createTech(o: TechOptions): Tech {
-  const { grid, gull, spots, repair } = o;
+  const { grid, gull, spots, repair, office } = o;
   const post = o.post ?? POST;
+  const home = office?.desk ?? post;
   const speed = o.speed ?? TECH_SPEED;
   const workTime = o.workTime ?? WORK_TIME;
 
   let phase: TechPhase = 'idle';
+  let zone: TechZone = office ? 'office' : 'hall';
   let job: Repair | null = null;
   let spot: Spot | null = null;
   let route: Point[] = [];
   let left = 0;
+  let thenDoors = false; // at the end of this walk, go through the doors
+  let doorStep = 0; // through the doors: 0 wait for the near one, 1 into the hallway, 2 wait for the far one, 3 out
 
   let seen: TechWorld | null = null;
   let broken: Repair[] = [];
@@ -92,24 +117,38 @@ export function createTech(o: TechOptions): Tech {
   const asked = new Map<string, number>(); // repair -> when it last asked for it
   const tries = new Map<string, number>(); // repair -> how often it asked this shift
 
-  const atPost = () => Math.hypot(gull.x - post.x, gull.z - post.z) < 0.05;
+  const homeZone: TechZone = office ? 'office' : 'hall';
+  const atHome = () => zone === homeZone && Math.hypot(gull.x - home.x, gull.z - home.z) < 0.05;
   const stillBroken = (r: Repair) => broken.some((b) => b.kind === r.kind && b.id === r.id);
+  const at = (p: Point): Spot => ({ x: p.x, z: p.z, face: 0, work: [p.x, 0, p.z] });
 
   const go = (r: Route<Repair | null>) => {
     job = r.tag;
     spot = r.spot;
     route = r.points.slice();
     phase = 'walking';
+    thenDoors = false;
+  };
+  /** Walks to the near side of the doors (on this zone's floor) and goes through; `next` is what it is going out for. */
+  const toDoors = (next: Repair | null) => {
+    const g = zone === 'hall' ? grid : office!.grid;
+    const r = planRoute(g, gull, [{ tag: null, spots: [at(zone === 'hall' ? office!.hallSide : office!.officeSide)] }]);
+    if (!r) return stop();
+    go(r);
+    job = next;
+    spot = null;
+    thenDoors = true;
   };
   const stop = () => {
     job = null;
     spot = null;
     route = [];
     phase = 'idle';
+    thenDoors = false;
   };
 
-  /** The nearest repair it may take on now, by walking cost, with the route there. */
-  function nearestRepair(t: number): Route<Repair | null> | null {
+  /** The nearest repair it may take on now, by walking cost from `from` (on the hall floor), with the route there. */
+  function nearestRepair(t: number, from: Point): Route<Repair | null> | null {
     const options: Option<Repair | null>[] = [];
     for (const r of broken) {
       const k = keyOf(r);
@@ -121,21 +160,22 @@ export function createTech(o: TechOptions): Tech {
       }
       options.push({ tag: r, spots: spots(r) });
     }
-    return options.length > 0 ? planRoute(grid, gull, options) : null;
+    return options.length > 0 ? planRoute(grid, from, options) : null;
   }
 
   function replan(t: number, onDuty: boolean) {
+    // Part way through the doors: see that through first, then think again.
+    if (phase === 'doors') return;
     // Busy with a repair that is still wanted: see it through.
     if (job && onDuty && stillBroken(job)) return;
-    const next = onDuty ? nearestRepair(t) : null;
-    if (next) return go(next);
-    if (atPost()) return stop();
-    if (job || phase !== 'walking') {
-      const home = planRoute(grid, gull, [{ tag: null, spots: [post] }]);
-      if (home) go(home);
-      else stop();
-    }
-    // else it is already walking back to the post: carry on
+    const next = onDuty ? nearestRepair(t, zone === 'hall' ? gull : office!.hallSide) : null;
+    if (next) return zone === 'hall' ? go(next) : toDoors(next.tag);
+    if (atHome()) return stop();
+    if (phase === 'walking' && !job) return; // already on its way home: carry on
+    if (zone !== homeZone) return toDoors(null);
+    const back = planRoute(zone === 'hall' ? grid : office!.grid, gull, [{ tag: null, spots: [home] }]);
+    if (back) go(back);
+    else stop();
   }
 
   function finish(t: number) {
@@ -148,10 +188,48 @@ export function createTech(o: TechOptions): Tech {
     repair(done);
   }
 
+  /** One tick through the doors, from whichever side it is on. */
+  function throughDoors(dt: number) {
+    const f = office!;
+    const out = zone === 'hall';
+    const near: DoorIndex = out ? 0 : 1;
+    const far: DoorIndex = out ? 1 : 0;
+    const farSide = out ? f.officeSide : f.hallSide;
+    const facing = out ? Math.PI / 2 : -Math.PI / 2; // east into the office, west into the hall
+    gull.work = approach(gull.work, 0, dt * 3);
+    switch (doorStep) {
+      case 0:
+        f.doors.request(near);
+        standFacing(gull, facing, dt);
+        if (f.doors.isOpen(near)) doorStep = 1;
+        break;
+      case 1:
+        f.doors.request(near); // held open until it is through
+        if (stepToward(gull, f.middle.x, f.middle.z, speed, dt)) doorStep = 2;
+        break;
+      case 2:
+        f.doors.request(far); // opens once the near door has shut behind it
+        standFacing(gull, facing, dt);
+        if (f.doors.isOpen(far)) doorStep = 3;
+        break;
+      case 3:
+        f.doors.request(far);
+        if (stepToward(gull, farSide.x, farSide.z, speed, dt)) {
+          zone = out ? 'office' : 'hall';
+          stop();
+          dirty = true;
+        }
+        break;
+    }
+  }
+
   return {
     gull,
     get phase() {
       return phase;
+    },
+    get zone() {
+      return zone;
     },
     get job() {
       return job;
@@ -181,7 +259,7 @@ export function createTech(o: TechOptions): Tech {
         recheckAt = Infinity;
         dirty = true;
       }
-      if (dirty) {
+      if (dirty && phase !== 'doors') {
         dirty = false;
         replan(t, onDuty);
       }
@@ -189,15 +267,24 @@ export function createTech(o: TechOptions): Tech {
       switch (phase) {
         case 'idle':
           gull.work = approach(gull.work, 0, dt * 3);
-          standFacing(gull, atPost() ? post.face : undefined, dt);
+          standFacing(gull, atHome() ? home.face : undefined, dt);
           break;
         case 'walking': {
           gull.work = approach(gull.work, 0, dt * 3);
           const leg = route[0];
           if (leg && stepToward(gull, leg.x, leg.z, speed, dt)) route.shift();
-          if (route.length === 0) phase = job ? 'turning' : 'idle';
+          if (route.length === 0) {
+            if (thenDoors) {
+              thenDoors = false;
+              phase = 'doors';
+              doorStep = 0;
+            } else phase = job ? 'turning' : 'idle';
+          }
           break;
         }
+        case 'doors':
+          throughDoors(dt);
+          break;
         case 'turning':
           if (standFacing(gull, spot!.face, dt)) {
             phase = 'working';
@@ -211,6 +298,7 @@ export function createTech(o: TechOptions): Tech {
           if (left <= 0) finish(t);
           break;
       }
+      office?.doors.update(dt, [gull]);
     },
   };
 }

@@ -7,11 +7,12 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useStore } from '../store';
 import { C } from '../theme';
-import type { PartBox } from './layout';
+import { ENTRY, type PartBox } from './layout';
 import { STAFF_LAYER, buildCrew } from './Staff';
 import { inForeground } from './camera';
-import { buildHallGrid, spotsFor, type Repair, type Spot } from './nav';
-import { POST, createTech, type Tech as TechBrain } from './rounds';
+import { buildGrid, buildHallGrid, spotsFor, type Repair, type Spot } from './nav';
+import { createTech, type TechOffice, type Tech as TechBrain } from './rounds';
+import type { Airlock } from './airlock';
 
 const noRaycast = () => null;
 const DOT_GAP = 0.36; // metres between route dots
@@ -140,21 +141,39 @@ function buildFx(): Fx {
 
 const center = new THREE.Vector3();
 
-export function Tech({ layout }: { layout: Record<string, PartBox> }) {
+/** The office floor, its desk in the way, and where the tech waits at the desk (facing it, east). */
+export function officeFor(doors: Airlock): TechOffice {
+  const { office: o, desk } = ENTRY;
+  const [dw, , dd] = desk.size;
+  const deskRect = { x0: desk.x - dw / 2, x1: desk.x + dw / 2, z0: desk.z - dd / 2, z1: desk.z + dd / 2 };
+  return {
+    grid: buildGrid(o, [deskRect]),
+    desk: { x: deskRect.x0 - 0.55, z: desk.z, face: Math.PI / 2, work: [deskRect.x0, desk.size[1], desk.z] },
+    doors,
+    hallSide: ENTRY.hallSide,
+    middle: ENTRY.middle,
+    officeSide: ENTRY.officeSide,
+  };
+}
+
+export function Tech({ layout, doors }: { layout: Record<string, PartBox>; doors: Airlock }) {
   const site = useStore((s) => s.site);
   const camera = useThree((s) => s.camera);
+  const office = useMemo(() => officeFor(doors), [doors]);
   const crew = useMemo(() => {
-    const c = buildCrew([{ route: [{ x: POST.x, z: POST.z }], speed: 0, start: 0 }], { hat: true });
-    c.gulls[0].yaw = POST.face;
+    const c = buildCrew([{ route: [{ x: office.desk.x, z: office.desk.z }], speed: 0, start: 0 }], { hat: true });
+    c.gulls[0].yaw = office.desk.face;
     c.gulls[0].walk = 0;
     return c;
-  }, []);
+  }, [office]);
   const fx = useMemo(buildFx, []);
-  // A new hall (live mode's first sync) gets a new floor grid; the gull carries on from where it is.
+  // A new hall (live mode's first sync) gets a new floor grid and a fresh tech, which starts at its
+  // desk again (the gull itself carries on from where it is, so it walks back if it was out).
   const tech = useMemo(() => {
     const cache = new Map<string, Spot[]>();
     return createTech({
       grid: buildHallGrid(site, layout),
+      office,
       gull: crew.gulls[0],
       spots: (r: Repair) => {
         const k = `${r.kind}:${r.id}`;
@@ -164,7 +183,7 @@ export function Tech({ layout }: { layout: Record<string, PartBox> }) {
       },
       repair: (r) => useStore.getState().repair(r),
     });
-  }, [site, layout, crew]);
+  }, [site, layout, crew, office]);
 
   useEffect(() => {
     camera.layers.enable(STAFF_LAYER);

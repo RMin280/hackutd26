@@ -128,3 +128,38 @@ export function buildPartLayout(site: Site): Record<string, PartBox> {
   }
   return out;
 }
+
+// ---------- walls, the entrance and the tech's office ----------
+
+/** Walls round the slab: a low solid base and glass above it, so nothing hides the racks. */
+export const WALL = { t: 0.12, h: 2.4, base: 0.45, door: 1.0, doorH: 2.1 };
+
+/**
+ * The way in: a short hallway out of the east wall with a door at each end (a mantrap: one
+ * opens only once the other is shut), then the tech's office. Everything is centred on z = 0,
+ * where the tech's post used to be, between the two spines.
+ */
+export const ENTRY = (() => {
+  const z = 0;
+  const len = 1.6; // the hallway between the two doors, inside
+  const width = 1.4; // the hallway, inside
+  const inner = HALL.x1 + WALL.t / 2; // the hall-side door, in the east wall
+  const hall0 = HALL.x1 + WALL.t; // the hallway's inside, west end
+  const outer = hall0 + len + WALL.t / 2; // the office-side door, in the office's west wall
+  const office = { x0: hall0 + len + WALL.t, x1: hall0 + len + WALL.t + 3.2, z0: z - 2, z1: z + 2 };
+  return {
+    z,
+    len,
+    width,
+    /** x of the two door planes: 0 = the hall side, 1 = the office side. */
+    doors: [inner, outer] as const,
+    hallway: { x0: hall0, x1: hall0 + len, z0: z - width / 2, z1: z + width / 2 },
+    office,
+    /** Where the tech stands to wait for each door, and between them. */
+    hallSide: { x: HALL.x1 - 0.7, z },
+    middle: { x: hall0 + len / 2, z },
+    officeSide: { x: office.x0 + 0.7, z },
+    /** The desk against the office's east wall. */
+    desk: { x: office.x1 - 0.4, z, size: [0.7, 0.75, 1.4] as Vec3 },
+  };
+})();

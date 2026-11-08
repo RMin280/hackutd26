@@ -150,7 +150,7 @@ hackutd26/
 ├── tests/                   # pytest: agents (triage, fixer, dependency, llm router, mock)
 ├── mcp/                     # (if time) MCP tools over the agents' HTTP adapter
 └── frontend/                # control-room view (Squawk); src/live/ = SpacetimeDB data source, src/mock/ = fallback
-    └── src/scene/           # three.js hall, racks, parts, Staff.tsx (gull model), Tech.tsx (hardware repairs), FixerPopups.tsx (software fixes), Doors.tsx
+    └── src/scene/           # three.js hall, racks, parts, Staff.tsx (gull model), Tech.tsx (hardware repairs), FixerPopups.tsx (software fixes), Building.tsx + airlock.ts (walls, interlocked entrance, tech office), Doors.tsx
 ```
 
 Not in the repo, although older docs mentioned them: `FRONTEND.md`, `.claude/skills/`, `three-playground.html`, `data/`, `backend/`.

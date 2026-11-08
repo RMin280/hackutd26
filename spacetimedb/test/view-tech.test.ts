@@ -9,12 +9,14 @@ import { initialWorld } from '../../frontend/src/mock/scenario';
 import { buildSite } from '../../frontend/src/mock/site';
 import type { PartState, World } from '../../frontend/src/model/types';
 import type { GullState } from '../../frontend/src/scene/gait';
-import { buildPartLayout, coldAisleZs, HALL, hotAisleZ } from '../../frontend/src/scene/layout';
+import { buildPartLayout, coldAisleZs, ENTRY, HALL, WALL, hotAisleZ } from '../../frontend/src/scene/layout';
+import { createAirlock, DOOR_CLOSE_TIME, DOOR_OPEN_TIME } from '../../frontend/src/scene/airlock';
 import {
   BODY,
   CELL,
   buildGrid,
   buildHallGrid,
+  cellAt,
   dijkstra,
   forEachStep,
   hallObstacles,
@@ -23,11 +25,12 @@ import {
   routeLength,
   spotsFor,
   standable,
+  walkable,
   type Point,
   type Rect,
   type Repair,
 } from '../../frontend/src/scene/nav';
-import { POST, RETRY_AFTER, brokenIn, createTech, type Tech } from '../../frontend/src/scene/rounds';
+import { POST, RETRY_AFTER, brokenIn, createTech, type Tech, type TechOffice } from '../../frontend/src/scene/rounds';
 
 const site = buildSite();
 const layout = buildPartLayout(site);
@@ -306,4 +309,128 @@ test('a repair that does not take is tried once more, then left alone', () => {
   run(s, () => true, (_, t) => t > 3 * (RETRY_AFTER + 30));
   assert.deepEqual(s.repaired, ['node-417', 'node-417']);
   assert.ok(atPost(s.tech), 'it gives up and goes back to its post');
+});
+
+// ---------- the entrance and the office ----------
+
+const lockAt = () => createAirlock({ doors: ENTRY.doors, z: ENTRY.z, width: WALL.door });
+
+test('the entrance doors: one opens when asked, the other only once the first has shut', () => {
+  const doors = lockAt();
+  const dt = 0.05;
+  const tick = (ask: (0 | 1)[], people = []) => {
+    for (const d of ask) doors.request(d);
+    doors.update(dt, people);
+    assert.ok(doors.open[0] === 0 || doors.open[1] === 0, 'never both open at once');
+  };
+  for (let t = 0; t < DOOR_OPEN_TIME + 0.2; t += dt) tick([0, 1]); // both asked for: the hall side goes first
+  assert.ok(doors.isOpen(0));
+  assert.equal(doors.open[1], 0);
+  assert.ok(doors.isLocked(1), 'the office side is locked while the hall side is open');
+  for (let t = 0; t < 0.5; t += dt) tick([1]); // the far door is asked for: the near one starts closing, the far one waits
+  assert.equal(doors.open[1], 0);
+  assert.ok(doors.open[0] > 0 && doors.open[0] < 1);
+  for (let t = 0; t < DOOR_CLOSE_TIME + DOOR_OPEN_TIME + 0.3; t += dt) tick([1]);
+  assert.equal(doors.open[0], 0);
+  assert.ok(doors.isOpen(1));
+});
+
+test('someone standing in a doorway holds that door open', () => {
+  const doors = lockAt();
+  for (let t = 0; t < 1.2; t += 0.05) {
+    doors.request(0);
+    doors.update(0.05, []);
+  }
+  const inIt = { x: ENTRY.doors[0], z: ENTRY.z };
+  for (let t = 0; t < 3; t += 0.05) doors.update(0.05, [inIt]);
+  assert.ok(doors.isOpen(0), 'still open with someone in it');
+  for (let t = 0; t < 3; t += 0.05) doors.update(0.05, []);
+  assert.equal(doors.open[0], 0, 'shut once they have gone');
+});
+
+function officeSetup(broken: Record<string, PartState>) {
+  const doors = lockAt();
+  const { office: o, desk } = ENTRY;
+  const [dw, , dd] = desk.size;
+  const deskRect = { x0: desk.x - dw / 2, x1: desk.x + dw / 2, z0: desk.z - dd / 2, z1: desk.z + dd / 2 };
+  const office: TechOffice = {
+    grid: buildGrid(o, [deskRect]),
+    desk: { x: deskRect.x0 - 0.55, z: desk.z, face: Math.PI / 2, work: [deskRect.x0, desk.size[1], desk.z] },
+    doors,
+    hallSide: ENTRY.hallSide,
+    middle: ENTRY.middle,
+    officeSide: ENTRY.officeSide,
+  };
+  let world: World = initialWorld(site);
+  for (const [id, state] of Object.entries(broken)) {
+    if (site.parts[id]) world.partState[id] = state;
+    else world.nodeState[id] = state;
+  }
+  const repaired: string[] = [];
+  const tech = createTech({
+    grid: hall,
+    office,
+    gull: gullAt(office.desk, office.desk.face),
+    spots: (r) => spotsFor(site, layout, r),
+    repair: (r) => {
+      repaired.push(r.id);
+      const next = structuredClone(world);
+      if (r.kind === 'part') next.partState[r.id] = 'ok';
+      else next.nodeState[r.id] = 'ok';
+      world = next;
+    },
+  });
+  return { tech, doors, office, repaired, world: () => world };
+}
+
+test('the office is reached only through the doors: the hall floor and the office floor do not join', () => {
+  const { office } = officeSetup({});
+  const [nodeSpot] = spotsFor(site, layout, { kind: 'node', id: 'node-417' });
+  assert.equal(cellAt(office.grid, nodeSpot.x, nodeSpot.z), -1, 'the hall is not on the office floor');
+  assert.equal(cellAt(hall, office.desk.x, office.desk.z), -1, 'and the office is not on the hall floor');
+  assert.ok(walkable(hall, cellAt(hall, ENTRY.hallSide.x, ENTRY.hallSide.z)), 'it can wait for the hall-side door');
+  assert.ok(planRoute(office.grid, office.desk, [{ tag: 'x', spots: [{ ...office.desk, x: ENTRY.officeSide.x, z: ENTRY.officeSide.z }] }]), 'and for the office-side one');
+});
+
+test('on duty it leaves its office through both doors, repairs, and comes back to its desk', () => {
+  const s = officeSetup({ 'node-417': 'failed' });
+  const dt = 0.05;
+  let sawHallway = false;
+  let sawBothOpen = false;
+  let lockedWhileInside = false;
+  let t = 0;
+  const home = () => s.tech.zone === 'office' && s.tech.phase === 'idle' && Math.hypot(s.tech.gull.x - s.office.desk.x, s.tech.gull.z - s.office.desk.z) < 0.05;
+  for (; t < 300; t += dt) {
+    s.tech.update(dt, t, true, s.world());
+    const g = s.tech.gull;
+    const h = ENTRY.hallway;
+    if (g.x > h.x0 && g.x < h.x1) {
+      sawHallway = true;
+      if (s.doors.isLocked(0) || s.doors.isLocked(1)) lockedWhileInside = true;
+    }
+    if (s.doors.open[0] > 0 && s.doors.open[1] > 0) sawBothOpen = true;
+    if (s.repaired.length === 1 && home()) break;
+  }
+  assert.deepEqual(s.repaired, ['node-417']);
+  assert.ok(home(), 'back at its desk');
+  assert.ok(sawHallway, 'it went through the hallway between the doors');
+  assert.ok(lockedWhileInside, 'one door was locked while it was between them');
+  assert.ok(!sawBothOpen, 'the two doors were never open together');
+  assert.ok(t < 200, `took ${t.toFixed(0)} s`);
+});
+
+test('off duty it stays at its desk; called off on the way out, it goes back to the desk', () => {
+  const s = officeSetup({ 'node-417': 'failed' });
+  for (let t = 0; t < 20; t += 0.05) s.tech.update(0.05, t, false, s.world());
+  assert.equal(s.tech.zone, 'office');
+  assert.equal(s.tech.phase, 'idle');
+  let t = 20;
+  for (; t < 60 && s.tech.zone === 'office'; t += 0.05) s.tech.update(0.05, t, true, s.world());
+  assert.equal(s.tech.zone, 'hall', 'it went out');
+  for (; t < 200; t += 0.05) {
+    s.tech.update(0.05, t, false, s.world());
+    if (s.tech.zone === 'office' && s.tech.phase === 'idle') break;
+  }
+  assert.equal(s.tech.zone, 'office');
+  assert.deepEqual(s.repaired, []);
 });

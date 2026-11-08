@@ -3,7 +3,7 @@
 
 import * as THREE from 'three';
 import type { FocusTarget, Site } from '../model/types';
-import { HALL, RACK, rackBase, rowFacing, type PartBox } from './layout';
+import { ENTRY, HALL, RACK, WALL, rackBase, rowFacing, type PartBox } from './layout';
 
 export type Shot =
   | { kind: 'look'; target: THREE.Vector3; dir: THREE.Vector3; distance: number }
@@ -93,9 +93,11 @@ function boxCorners(min: THREE.Vector3, max: THREE.Vector3): THREE.Vector3[] {
   );
 }
 
-/** The hall's real footprint: the floor slab plus anything standing outside it (chillers). */
+/** The hall's real footprint: the floor slab plus anything standing outside it (chillers, the tech's office). */
 function hallPoints(parts: Record<string, PartBox>): THREE.Vector3[] {
   const pts = boxCorners(new THREE.Vector3(HALL.x0, 0, HALL.z0), new THREE.Vector3(HALL.x1, RACK.h, HALL.z1));
+  const o = ENTRY.office;
+  pts.push(...boxCorners(new THREE.Vector3(o.x0, 0, o.z0), new THREE.Vector3(o.x1 + WALL.t, WALL.base, o.z1)));
   for (const b of Object.values(parts)) {
     const outside = b.pos[0] - b.size[0] / 2 < HALL.x0 || b.pos[0] + b.size[0] / 2 > HALL.x1;
     if (!outside) continue;

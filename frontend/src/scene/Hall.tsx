@@ -5,7 +5,7 @@ import CameraControlsImpl from 'camera-controls';
 import * as THREE from 'three';
 import { useStore } from '../store';
 import { C } from '../theme';
-import { HALL, buildPartLayout, type PartBox } from './layout';
+import { ENTRY, HALL, WALL, buildPartLayout, type PartBox } from './layout';
 import { readFrame, resolveShot, shotFor } from './camera';
 import type { FocusTarget } from '../model/types';
 import { Racks } from './Racks';
@@ -14,6 +14,8 @@ import { Containment, Floor, FloorLabels } from './Floor';
 import { FeedLines, ProtectedZones, SelectionOutline } from './Overlays';
 import { Tech } from './Tech';
 import { FixerPopups } from './FixerPopups';
+import { Building } from './Building';
+import { createAirlock } from './airlock';
 import { HotAisleDoors } from './Doors';
 
 const { ACTION } = CameraControlsImpl;
@@ -160,6 +162,8 @@ export function Hall() {
   const setHover = useStore((s) => s.setHover);
   const select = useStore((s) => s.select);
   const layout = useMemo(() => buildPartLayout(site), [site]);
+  // the entrance's two interlocked doors: the tech works them, the building draws them
+  const doors = useMemo(() => createAirlock({ doors: ENTRY.doors, z: ENTRY.z, width: WALL.door }), []);
 
   return (
     <Canvas
@@ -194,7 +198,8 @@ export function Hall() {
       />
       <Racks />
       <Parts layout={layout} />
-      <Tech layout={layout} />
+      <Tech layout={layout} doors={doors} />
+      <Building doors={doors} />
       <FixerPopups layout={layout} />
       <Containment />
       <HotAisleDoors />
