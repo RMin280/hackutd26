@@ -10,7 +10,7 @@
 // This file declares the tables, adapts them to the core's Store interface and
 // exports the reducers. Export names become reducer names (requestWork -> request_work).
 
-import { schema, SenderError, t, table } from 'spacetimedb/server';
+import { schema, SenderError, t, table, type InferSchema, type ReducerCtx } from 'spacetimedb/server';
 import * as cmd from './core/commands';
 import * as lab from './core/lab';
 import * as scenario from './core/scenario';
@@ -320,7 +320,7 @@ export default spacetimedb;
 
 // ---------------------------------------------------------------- Store adapter
 
-type Ctx = Parameters<Parameters<typeof spacetimedb.init>[0]>[0];
+type Ctx = ReducerCtx<InferSchema<typeof spacetimedb>>;
 
 const all = <R>(rows: Iterable<R>): R[] => Array.from(rows);
 const byId = <R extends { id: bigint }>(a: R, b: R) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);

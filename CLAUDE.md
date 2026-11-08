@@ -123,6 +123,9 @@ blast-radius/
 ## Commands (fill in as they're created)
 
 ```
+bash dev.sh server                            # terminal 1: local SpacetimeDB on :3000
+bash dev.sh up                                # terminal 2: publish, bindings, view in live mode (:5173)
+bash dev.sh check | publish | fresh | frontend | test   # see the root README
 (cd spacetimedb && npm install && npm test)   # unit + scenario tests
 (cd spacetimedb && npm run test:scale)        # performance limits
 spacetime start                               # local SpacetimeDB on :3000 (own terminal)

@@ -26,14 +26,15 @@ const TABLES = [
 type TableName = (typeof TABLES)[number];
 const TOPOLOGY = new Set<TableName>(['part', 'rack', 'node', 'downstream']);
 
-// The slice of the generated DbConnection this file uses. Kept loose on purpose: the
-// generated bindings are the real types; this only names what gets called.
+// The slice of the generated bindings (`npm run bindings`) this file uses, checked against
+// the SpacetimeDB 2.x TypeScript SDK. Kept loose on purpose and reached through one cast
+// (connectionBuilder), so this file compiles the same before and after the bindings exist.
 type Callback = (...args: unknown[]) => void;
 interface LiveTable {
   iter(): Iterable<unknown>;
   onInsert(cb: Callback): void;
   onDelete(cb: Callback): void;
-  onUpdate?(cb: Callback): void;
+  onUpdate?(cb: Callback): void; // tables with a primary key
 }
 interface SubscriptionBuilder {
   onApplied(cb: Callback): SubscriptionBuilder;
@@ -41,10 +42,24 @@ interface SubscriptionBuilder {
   subscribe(queries: string[]): unknown;
 }
 interface LiveConnection {
-  db: Record<TableName, LiveTable | undefined>;
-  reducers: Record<string, ((args: object) => Promise<void>) | undefined>;
+  db: Partial<Record<TableName, LiveTable>>;
+  // Reducers take one object of named arguments and resolve once the module ran them.
+  reducers: Partial<Record<string, (args: object) => Promise<void>>>;
   subscriptionBuilder(): SubscriptionBuilder;
 }
+interface LiveBuilder {
+  withUri(uri: string): LiveBuilder;
+  withDatabaseName(name: string): LiveBuilder;
+  withToken(token?: string): LiveBuilder;
+  withAutomaticReconnect?(): LiveBuilder;
+  onConnect(cb: (conn: LiveConnection, identity: unknown, token: string) => void): LiveBuilder;
+  onAutomaticReconnect?(cb: (conn: LiveConnection, identity: unknown, token: string) => void): LiveBuilder;
+  // nextAttempt is set only while automatic reconnect is retrying.
+  onConnectError(cb: (ctx: unknown, err: unknown, nextAttempt?: number) => void): LiveBuilder;
+  onDisconnect(cb: (ctx: unknown, err?: unknown, nextAttempt?: number) => void): LiveBuilder;
+  build(): unknown;
+}
+const connectionBuilder = () => (DbConnection as unknown as { builder(): LiveBuilder }).builder();
 type AppState = ReturnType<typeof useStore.getState>;
 
 const TOKEN_KEY = `blast-radius:${LIVE_URI}:${LIVE_DB}:token`;
@@ -126,17 +141,20 @@ function schedule(topology: boolean): void {
   setTimeout(sync, 30);
 }
 
-function call(name: string, args: object): void {
-  const reducers = conn?.reducers;
-  const fn = reducers?.[name];
-  if (!reducers || !fn) {
-    useStore.setState({ caption: `Not connected to SpacetimeDB yet (${name}).`, playing: false });
+/** Calls a reducer. Refusals show in the caption unless `quiet`. */
+function call(name: string, args: object, quiet = false): void {
+  const fn = conn?.reducers[name];
+  if (!fn) {
+    if (!quiet) useStore.setState({ caption: `Not connected to SpacetimeDB yet (${name}).`, playing: false });
     return;
   }
-  fn.call(reducers, args).catch((e: unknown) => {
-    console.warn(`[blast-radius] ${name} failed`, e);
-    useStore.setState({ caption: `The backend refused ${name}: ${messageOf(e)}`, playing: false });
-  });
+  Promise.resolve()
+    .then(() => fn(args))
+    .catch((e: unknown) => {
+      if (quiet) return;
+      console.warn(`[blast-radius] ${name} failed`, e);
+      useStore.setState({ caption: `The backend refused ${name}: ${messageOf(e)}`, playing: false });
+    });
 }
 
 /** The presenter's controls now drive the backend's scenario runner instead of the mock. */
@@ -181,9 +199,9 @@ function attach(c: LiveConnection): void {
     table.onDelete(() => schedule(topology));
     table.onUpdate?.(() => schedule(false));
   }
-  // The control room acts as a shift lead. Fails quietly if this identity is already the
-  // admin or open registration is off (then an admin must register_actor it).
-  c.reducers.selfRegister?.call(c.reducers, { name: 'Control room', role: 'shift_lead', rows: [] }).catch(() => {});
+  // The control room acts as a shift lead. Refused quietly if this identity is already
+  // registered (a reload) or open registration is off (then an admin must register_actor it).
+  call('selfRegister', { name: 'Control room', role: 'shift_lead', rows: [] }, true);
   c.subscriptionBuilder()
     .onApplied(() => schedule(true))
     .onError((...args: unknown[]) => {
@@ -194,23 +212,40 @@ function attach(c: LiveConnection): void {
 }
 
 export function startLive(): void {
-  useStore.setState({ caption: `Connecting to SpacetimeDB: ${LIVE_DB} at ${LIVE_URI}…` });
+  const uri = LIVE_URI;
+  if (!uri) return;
+  const where = `${LIVE_DB} at ${uri}`;
+  useStore.setState({ caption: `Connecting to SpacetimeDB: ${where}…` });
   takeOverControls();
-  let builder = DbConnection.builder().withUri(LIVE_URI).withDatabaseName(LIVE_DB).withToken(readToken());
-  if (typeof builder.withAutomaticReconnect === 'function') builder = builder.withAutomaticReconnect();
+  let builder = connectionBuilder().withUri(uri).withDatabaseName(LIVE_DB).withToken(readToken());
+  // Survives a restart of `spacetime start` without a page reload (subscriptions are kept).
+  if (builder.withAutomaticReconnect) builder = builder.withAutomaticReconnect();
+  if (builder.onAutomaticReconnect) builder = builder.onAutomaticReconnect(() => schedule(true));
   builder
-    .onConnect((c: LiveConnection, _identity: unknown, token: string) => {
+    .onConnect((c, _identity, token) => {
       saveToken(token);
       attach(c);
     })
-    .onConnectError((_ctx: unknown, err: unknown) => {
-      clearToken();
-      useStore.setState({
-        caption: `Can't reach SpacetimeDB (${LIVE_DB} at ${LIVE_URI}): ${messageOf(err)}. Is \`spacetime start\` running and the module published?`,
-      });
+    .onConnectError((_ctx, err, nextAttempt) => {
+      if (nextAttempt === undefined) {
+        // A token from an older local server is one cause; the next reload gets a fresh identity.
+        clearToken();
+        useStore.setState({
+          caption: `Can't reach SpacetimeDB (${where}): ${messageOf(err)}. Is \`spacetime start\` running and the module published? (bash dev.sh up)`,
+          playing: false,
+        });
+      } else {
+        useStore.setState({ caption: `SpacetimeDB is unreachable (${where}); retrying (attempt ${nextAttempt})…`, playing: false });
+      }
     })
-    .onDisconnect(() => {
-      useStore.setState({ caption: 'Disconnected from SpacetimeDB. Reload the page to reconnect.', playing: false });
+    .onDisconnect((_ctx, _err, nextAttempt) => {
+      useStore.setState({
+        caption:
+          nextAttempt === undefined
+            ? 'Disconnected from SpacetimeDB. Reload the page to reconnect.'
+            : 'Lost the connection to SpacetimeDB; reconnecting…',
+        playing: false,
+      });
     })
     .build();
 }

@@ -50,6 +50,8 @@ NMC² palette: black surfaces, azure `#2b9cfc` for the product acting (selection
 
 The view holds no safety logic: it renders what `src/store.ts` holds. By default `src/mock/` fills it, as before. In live mode the SpacetimeDB backend in `../spacetimedb` does: the view subscribes to its tables, and Space, `R`, `1`/`2` and step clicks call the backend's scenario reducers (`scenario_next`, `scenario_start`, `scenario_goto`) instead of the mock.
 
+From the repo root, `bash dev.sh up` does all of this (with `bash dev.sh server` running in another terminal). By hand:
+
 ```
 # once: backend running and published (see ../spacetimedb/README.md)
 cd frontend

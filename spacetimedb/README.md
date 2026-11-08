@@ -21,7 +21,7 @@ spacetimedb/
 
 ## Run it
 
-You need the [SpacetimeDB CLI](https://spacetimedb.com/install) (2.x) and Node 22+.
+You need the [SpacetimeDB CLI](https://spacetimedb.com/install) (2.x) and Node 22+. The quickest way is the repo root's `dev.sh` (`bash dev.sh server` in one terminal, `bash dev.sh up` in another; see the root `README.md`). By hand:
 
 ```bash
 cd spacetimedb && npm install
@@ -33,7 +33,9 @@ spacetime publish --server local --module-path . blast-radius
 spacetime logs --server local blast-radius
 ```
 
-The first publish runs `init`. It loads the **diagnostics test bed** (below) and makes the publishing identity (your CLI) the admin. If you change a table's columns, republish with `--clear-database` and `init` loads the test bed again.
+`spacetime publish` runs `tsc --noEmit` on this folder before it bundles, so a type error stops it; `npm run typecheck` shows the same errors. If the CLI isn't logged in, publish first asks to log in with spacetimedb.com: say yes (free, and it works with the local server). Keep the `spacetimedb` npm package no newer than the CLI (`spacetime --version`); `spacetime version upgrade` updates the CLI.
+
+The first publish runs `init`. It loads the **diagnostics test bed** (below) and makes the publishing identity (your CLI) the admin. If you change a table's columns, republish with `--delete-data` (or `bash dev.sh fresh`) and `init` loads the test bed again.
 
 Then open the control room (see `frontend/README.md`, "Live mode"): it shows whatever the database holds, and Space runs the demo scenario on the backend.
 
@@ -186,7 +188,7 @@ These time the core logic over in-memory indexes that match the tables' indexes.
 
 ## Known limits
 
-- The SpacetimeDB layer (`src/index.ts`) was written against the SpacetimeDB 2.x docs and checked with a local stand-in for `spacetimedb/server`. The first `spacetime publish` is its real test.
+- The SpacetimeDB layer (`src/index.ts`) type-checks against the `spacetimedb` 2.14 SDK source, and its reducers were run against a stand-in runtime. It hasn't run on a real SpacetimeDB server yet, so the first `spacetime publish` is its real test.
 - The hot-aisle model is an assumption: open containment counts as losing one cooling feed of headroom for every rack in both rows.
 - A request for a later window checks today's job placement and today's broken parts. There is no forecasting.
 - Topology tables are public. Scoping who can read the map (DESIGN.md §9) needs SpacetimeDB views, which aren't built yet.

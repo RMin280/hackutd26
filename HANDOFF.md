@@ -107,7 +107,7 @@ Add new feedback here. New ideas from mentors go to the roadmap (`DESIGN.md` §1
 
 1. **Settle team questions** (5 min): owners for the four areas (see team doc demo plan), **who owns "no" on scope**. Stack is decided: SpacetimeDB (TypeScript module) + React/Vite/TS.
 2. **Create the repo** with `CLAUDE.md`, `DESIGN.md`, `FRONTEND.md`, `HANDOFF.md` and `.claude/skills/blast-radius-dev/SKILL.md`.
-3. **Done:** `spacetimedb/` has the demo hall, the interlock (scopes, leases, earliest safe time), diagnosis, placement, protection and their tests. **Next:** first real `spacetime publish` (see `spacetimedb/README.md`), `npm run bindings` in `frontend/`, then check live mode in the browser. Diagnostic agents can work the test bed through the reducers today; the MCP adapter comes after.
+3. **Done:** `spacetimedb/` has the demo hall, the interlock (scopes, leases, earliest safe time), diagnosis, placement, protection and their tests. **Next:** first real publish and live mode in the browser: `bash dev.sh server`, then `bash dev.sh up` (root `README.md`). The module now type-checks against the `spacetimedb` 2.14 SDK, which is what `spacetime publish` runs first; an earlier version didn't. Diagnostic agents can work the test bed through the reducers today; the MCP adapter comes after.
 4. Scale limits are enforced by `spacetimedb/test/scale/scale.test.ts` (`npm run test:scale`); quote its numbers in the pitch.
 5. Then: MCP server (thin adapter over the module's HTTP API) → scripted agents → scenario runner.
 6. Frontend in FRONTEND.md's build order: static map → live SSE → decision feed → controls → cards → rack panel.
