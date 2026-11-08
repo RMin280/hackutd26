@@ -1,5 +1,5 @@
 import { useStore } from '../store';
-import { VERDICT, clock } from './format';
+import { VERDICT, actorName, clock, modelOf } from './format';
 import { IconChevron } from './Icons';
 
 // A log, so it reads like one: time in its own column, the decision, who made it and the verdict, then the reason.
@@ -46,7 +46,8 @@ export function DecisionFeed() {
                   <span className="feed-main">
                     <span className="feed-title">{e.title}</span>
                     <span className="feed-meta">
-                      {e.actor}
+                      {actorName(e.actor)}
+                      {e.type === 'agent_plan' && modelOf(e) && <span className="feed-model">{modelOf(e)}</span>}
                       <span className={`verdict tone-${v.tone}`}>{v.text}</span>
                     </span>
                     <span className="feed-reason">{e.reason}</span>

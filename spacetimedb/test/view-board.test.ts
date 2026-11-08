@@ -222,6 +222,15 @@ test('agent cards: one per agent, newest row sets the state, counts of fixes and
   assert.equal(waiting[0].state, 'waiting');
   const stopped = agentCards([fixerRow({ type: 'agent', verdict: 'warn', title: 'Stopped on node-1118: failed closed', data: 'not json' })]);
   assert.equal(stopped[0].state, 'stopped', 'bad data falls back to the verdict');
+  // The plan row says which model wrote it; the card carries the newest one.
+  const planned = agentCards(
+    [
+      fixerRow({ type: 'agent_plan', verdict: 'plan', title: 'Plan for node-1118', data: JSON.stringify({ steps: [], model: 'nvidia/nemotron-3-super-120b-a12b via OpenRouter' }) }),
+      fixerRow({ type: 'agent', verdict: 'fixed', title: 'Fixed node-1118', data: JSON.stringify({ status: 'fixed' }) }),
+    ].reverse(),
+  );
+  assert.equal(planned[0].model, 'nvidia/nemotron-3-super-120b-a12b via OpenRouter');
+  assert.equal(card.model, undefined, 'no plan row with a model: none shown');
 });
 
 test('offline the mock’s leases still read as items', () => {

@@ -107,6 +107,7 @@ function FixPopup({ fix, name, at }: { fix: Fix; name: string; at: Vec3 }) {
           <span className="fix-pop-agent">Nemotron fixer</span>
           <span className="fix-pop-subject">{name}</span>
         </div>
+        {fix.model && <div className="fix-pop-model">{fix.model}</div>}
         <ol className="fix-pop-lines">
           {fix.lines.map((l, i) => (
             <li key={l.seq} className={working && i === fix.lines.length - 1 ? 'is-current' : undefined}>

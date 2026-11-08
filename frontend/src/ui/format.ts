@@ -1,4 +1,4 @@
-import type { MarginLevel, Owner, PartState, Verdict } from '../model/types';
+import type { DecisionEvent, MarginLevel, Owner, PartState, Verdict } from '../model/types';
 
 // Colour is reserved for meaning: healthy stays neutral ('ok'), gold and red mark
 // problems, azure is the product's own voice (actions, protection), ice is a safe placement.
@@ -40,3 +40,22 @@ export const clock = (min: number) => {
   const m = min % 60;
   return m ? `T+${h}h${m}m` : `T+${h}h`;
 };
+
+/** The agents' registered identities, as people should read them. Anyone else keeps their name. */
+const ACTOR_DISPLAY: Record<string, string> = {
+  'fixer-agent': 'Nemotron fixer',
+  'update-agent': 'Nemotron update agent',
+};
+export const actorName = (actor: string) => ACTOR_DISPLAY[actor] ?? actor;
+
+/** Which model wrote a row, from the backend's `data` (the agents put `model` on their plan rows). */
+export function modelOf(e: Pick<DecisionEvent, 'data'>): string | undefined {
+  if (!e.data) return undefined;
+  try {
+    const d: unknown = JSON.parse(e.data);
+    const m = d && typeof d === 'object' && !Array.isArray(d) ? (d as { model?: unknown }).model : undefined;
+    return typeof m === 'string' && m ? m : undefined;
+  } catch {
+    return undefined;
+  }
+}

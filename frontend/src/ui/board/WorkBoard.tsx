@@ -13,7 +13,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { liveEnabled } from '../../live/config';
 import type { FocusTarget, Site, WorkItem } from '../../model/types';
 import { boardOnly, useStore } from '../../store';
-import { clock } from '../format';
+import { actorName, clock } from '../format';
 import { IconBolt, IconBot, IconChevron, IconChip, IconClose, IconFan, IconGear, IconLock, IconNetwork, IconPerson, IconTarget } from '../Icons';
 import { ViewTabs } from '../ViewTabs';
 import {
@@ -234,7 +234,7 @@ function WorkRow({ item, lane, yours }: { item: WorkItem; lane: Lane; yours: boo
             ) : item.assignee ? (
               <span className="tone-azure">{yours ? 'Yours' : item.assignee}</span>
             ) : (
-              <span className="muted">{item.actor}</span>
+              <span className="muted">{actorName(item.actor)}</span>
             )}
             {lock && (
               <span className="row-lock" title={`Locked for ${lock.job} until ${clock(lock.until)}`}>
@@ -395,7 +395,7 @@ function WorkDetail({ item }: { item: WorkItem }) {
             {clock(item.start)} → {clock(item.end)}
           </Fact>
           <Fact label="Requested by">
-            {item.actor}
+            {actorName(item.actor)}
             {item.bookedBy && <span className="muted"> · booked by {item.bookedBy}</span>}
           </Fact>
           {item.approvedBy && <Fact label="Approved by">{item.approvedBy}</Fact>}
@@ -496,9 +496,11 @@ function AgentRow({ card }: { card: AgentCard }) {
       </span>
       <span className="ctx-main">
         <span className="ctx-title">
-          {card.actor}
-          <span className="ctx-kind">{AGENT_KIND[card.kind]}</span>
+          {actorName(card.actor)}
+          {/* The update agent shares the scheduler's icon kind; its own name says what it is. */}
+          {actorName(card.actor) === card.actor && <span className="ctx-kind">{AGENT_KIND[card.kind]}</span>}
         </span>
+        {card.model && <span className="ctx-model">{card.model}</span>}
         <span className="ctx-sub">
           {card.lastTitle}
           <span className="muted"> · {clock(card.lastSeen)}</span>

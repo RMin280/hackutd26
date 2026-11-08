@@ -167,6 +167,8 @@ export interface AgentCard {
   rows: number;
   fixed: number;
   handoffs: number;
+  /** Which model wrote its newest plan, when a plan row says. */
+  model?: string;
 }
 
 const AGENT_KINDS: readonly DecisionEvent['actorKind'][] = ['fixer', 'scheduler', 'cooling'];
@@ -216,6 +218,10 @@ export function agentCards(events: readonly DecisionEvent[]): AgentCard[] {
     card.rows++;
     if (e.verdict === 'fixed') card.fixed++;
     if (e.verdict === 'handoff') card.handoffs++;
+    if (!card.model && e.type === 'agent_plan') {
+      const m = dataOf(e).model;
+      if (typeof m === 'string' && m) card.model = m;
+    }
   }
   return [...cards.values()].sort((a, b) => b.lastSeen - a.lastSeen || a.actor.localeCompare(b.actor));
 }

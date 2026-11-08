@@ -245,7 +245,8 @@ ol, ul { list-style: none; }
 .feed-time { padding-top: 1px; font-size: 11px; color: var(--text-3); }
 .feed-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .feed-title { font-size: 13px; line-height: 1.4; color: var(--text); }
-.feed-meta { display: flex; align-items: baseline; gap: 8px; font-size: 11px; color: var(--text-3); }
+.feed-meta { display: flex; align-items: baseline; gap: 8px; font-size: 11px; color: var(--text-3); flex-wrap: wrap; }
+.feed-model { color: var(--text-3); font-size: 10px; letter-spacing: 0.04em; }
 .verdict { font-size: 11px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; }
 .feed-reason { margin-top: 2px; font-size: 12px; line-height: 1.5; color: var(--text-2); }
 
@@ -310,6 +311,7 @@ ol, ul { list-style: none; }
 .fix-pop-head { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
 .fix-pop-agent { font-size: 11px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--azure); }
 .fix-pop-subject { font-size: 11px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fix-pop-model { margin: -3px 0 6px; font-size: 10px; letter-spacing: 0.04em; color: var(--text-3); }
 .fix-pop-lines li { color: var(--text-3); padding-left: 10px; position: relative; animation: rise 0.3s ease-out; }
 .fix-pop-lines li::before { content: ''; position: absolute; left: 0; top: 7px; width: 4px; height: 1px; background: currentColor; }
 .fix-pop-lines li:last-child { color: var(--text-2); }
@@ -463,6 +465,7 @@ ol, ul { list-style: none; }
 .ctx-title { font-size: 13px; color: var(--text); }
 .ctx-kind { margin-left: 8px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
 .ctx-sub { font-size: 12px; line-height: 1.45; color: var(--text-2); }
+.ctx-model { font-size: 10px; letter-spacing: 0.04em; color: var(--text-3); }
 .ctx-row .verdict { white-space: nowrap; padding-top: 2px; }
 
 @media (max-width: 1280px) {

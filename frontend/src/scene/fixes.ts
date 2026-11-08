@@ -6,6 +6,7 @@
 // Pure: no React, no three.js. The view only renders the agent's own rows; nothing here decides.
 
 import type { DecisionEvent, FocusTarget } from '../model/types';
+import { modelOf } from '../ui/format';
 
 /** The fixer's rows that belong to a software fix. */
 export const SOFTWARE_FIX_TYPES: readonly string[] = ['agent_plan', 'agent_step', 'agent', 'notified', 'escalated'];
@@ -27,6 +28,8 @@ export interface Fix {
   status: FixStatus;
   /** The seq of its newest row. */
   last: number;
+  /** Which model wrote the plan, from the plan row's data. */
+  model?: string;
 }
 
 export const MAX_LINES = 4;
@@ -53,6 +56,10 @@ export function softwareFixes(events: readonly DecisionEvent[], afterSeq = 0): F
     }
     fix.lines.push({ seq: e.seq, text: e.title });
     if (fix.lines.length > MAX_LINES) fix.lines.shift();
+    if (e.type === 'agent_plan') {
+      const m = modelOf(e);
+      if (m) fix.model = m;
+    }
     if (e.focus.kind !== 'overview') fix.focus = e.focus;
     fix.status = statusOf(e) ?? 'working';
     fix.last = e.seq;
