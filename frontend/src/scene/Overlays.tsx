@@ -56,7 +56,7 @@ export function ProtectedZones() {
         ];
         return (
           <group key={`${row}-${from}`}>
-            <Line points={pts} color={C.blue} lineWidth={1.6} transparent opacity={0.85} raycast={noRaycast} />
+            <Line points={pts} color={C.azure} lineWidth={1.5} transparent opacity={0.9} raycast={noRaycast} />
             <mesh position={[posX(from), y + 0.005, rowZ(row)]} rotation-x={-Math.PI / 2} renderOrder={3} raycast={noRaycast}>
               <planeGeometry args={[0.44, 0.44]} />
               <meshBasicMaterial map={lock} transparent depthWrite={false} toneMapped={false} />
@@ -123,7 +123,7 @@ export function FeedLines({ layout }: { layout: Record<string, PartBox> }) {
       return [x, RACK.h + 0.08, z];
     };
     const colorFor = (p: string) =>
-      world.partState[p] === 'failed' ? C.red : world.partState[p] !== 'ok' || unprotected.has(p) ? C.amber : C.blue;
+      world.partState[p] === 'failed' ? C.red : world.partState[p] !== 'ok' || unprotected.has(p) ? C.gold : C.azure;
 
     // 1. Racks on their last backup: show the one unit they now hang on.
     for (const rid of site.rackOrder) {
@@ -132,7 +132,7 @@ export function FeedLines({ layout }: { layout: Record<string, PartBox> }) {
       for (const p of m.unprotected) {
         const t = site.parts[p].type;
         if (t !== 'cdu' && t !== 'pdu') continue;
-        out.push({ key: `u-${rid}-${p}`, from: partTop(layout, p), to: rackTop(rid), color: C.amber, dashed: true });
+        out.push({ key: `u-${rid}-${p}`, from: partTop(layout, p), to: rackTop(rid), color: C.gold, dashed: true });
       }
     }
 
@@ -152,7 +152,7 @@ export function FeedLines({ layout }: { layout: Record<string, PartBox> }) {
       for (const chain of [...r.powerFeeds, ...r.coolingFeeds]) {
         out.push({ key: `s-${chain[0]}`, from: partTop(layout, chain[0]), to: rackTop(selRack), color: colorFor(chain[0]), width: 1.8 });
       }
-      out.push({ key: `s-${r.network[0]}`, from: partTop(layout, r.network[0]), to: rackTop(selRack), color: C.purple, width: 1.4 });
+      out.push({ key: `s-${r.network[0]}`, from: partTop(layout, r.network[0]), to: rackTop(selRack), color: C.ice, width: 1.4 });
     } else if (selection?.kind === 'part') {
       const down = site.downstream[selection.id];
       if (down.length <= 24) {

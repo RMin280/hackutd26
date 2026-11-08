@@ -9,7 +9,6 @@ import { stateText } from '../ui/format';
 import type { PartBox } from './layout';
 import { useUnprotectedParts } from './hooks';
 
-const GROUP_BODY = { power: C.power, cooling: C.cooling, network: C.network };
 const noRaycast = () => null;
 
 // Neighbouring units (CDU-3 next to CDU-4, PDU A next to PDU B) get tags at two heights so they don't overlap.
@@ -45,11 +44,12 @@ function PartMesh({ id, box }: { id: string; box: PartBox }) {
 
   const type = site.parts[id].type;
   const [w, h, d] = box.size;
-  const capColor = state !== 'ok' ? STATE_COLOR[state] : unprotected ? C.amber : C.partCap;
+  const capColor = state !== 'ok' ? STATE_COLOR[state] : unprotected ? C.gold : C.partCap;
   // Callout tags only where they help: problems, the unit a rack now depends on, and the selection.
   const headUnit = type === 'cdu' || type === 'pdu';
   const showTag = selected || cause || state !== 'ok' || (unprotected && headUnit);
-  const body = selected || hovered ? '#3a3e48' : GROUP_BODY[box.group];
+  const tagTone = state === 'failed' ? 'red' : state !== 'ok' || unprotected ? 'gold' : 'azure';
+  const body = selected || hovered ? C.partBodyHover : C.partBody;
 
   return (
     <group position={box.pos}>
@@ -84,15 +84,18 @@ function PartMesh({ id, box }: { id: string; box: PartBox }) {
         <boxGeometry args={[w, 0.025, d]} />
         <meshBasicMaterial color={capColor} toneMapped={false} />
       </mesh>
-      {(unprotected || state !== 'ok') && <PulseRing size={box.size} color={state === 'failed' ? C.red : C.amber} />}
+      {(unprotected || state !== 'ok') && <PulseRing size={box.size} color={state === 'failed' ? C.red : C.gold} />}
       {selected && <SelectionEdges size={box.size} />}
       {showTag && (
         <Html position={[0, h + 0.5 + tagStagger(id), 0]} center zIndexRange={[1, 0]} pointerEvents="none">
           <div className="scene-tag">
-            <span className={`dot tone-${state === 'ok' ? (unprotected ? 'amber' : 'blue') : state === 'degraded' ? 'amber' : 'red'}`} />
+            <span className={`mark tone-${tagTone}`} aria-hidden />
             {label(id)}
-            {unprotected && state === 'ok' && <span className="scene-tag-sub">only working feed</span>}
-            {state !== 'ok' && <span className="scene-tag-sub">{stateText(state)}</span>}
+            {state !== 'ok' ? (
+              <span className={`scene-tag-sub tone-${tagTone}`}>{stateText(state)}</span>
+            ) : unprotected ? (
+              <span className="scene-tag-sub tone-gold">Only working feed</span>
+            ) : null}
           </div>
         </Html>
       )}
@@ -105,7 +108,7 @@ export function SelectionEdges({ size, y0 = 0 }: { size: [number, number, number
   const geo = useMemo(() => new THREE.EdgesGeometry(new THREE.BoxGeometry(sx + 0.08, sy + 0.08, sz + 0.08)), [sx, sy, sz]);
   return (
     <lineSegments geometry={geo} position={[0, y0 + sy / 2, 0]} raycast={noRaycast}>
-      <lineBasicMaterial color={C.blue} toneMapped={false} />
+      <lineBasicMaterial color={C.white} toneMapped={false} />
     </lineSegments>
   );
 }

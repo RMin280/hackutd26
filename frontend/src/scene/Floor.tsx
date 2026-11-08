@@ -23,6 +23,33 @@ import { makeTextTexture, useFontsReady } from './labels';
 
 const noRaycast = () => null;
 const TILE = 0.6; // raised-floor tiles
+const FADE = 9; // world units over which the floor dissolves into the dark around the hall
+const SLAB_W = HALL.w + 2 * FADE;
+const SLAB_D = HALL.d + 2 * FADE;
+
+/** Alpha map: opaque over the hall, easing to transparent across the FADE margin. */
+function fadeTexture(): THREE.CanvasTexture {
+  const size = 256;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d')!;
+  const img = g.createImageData(size, size);
+  for (let j = 0; j < size; j++) {
+    for (let i = 0; i < size; i++) {
+      const x = ((i + 0.5) / size - 0.5) * SLAB_W;
+      const z = ((j + 0.5) / size - 0.5) * SLAB_D;
+      const dx = Math.max(0, Math.abs(x) - HALL.w / 2);
+      const dz = Math.max(0, Math.abs(z) - HALL.d / 2);
+      const t = Math.min(1, Math.hypot(dx, dz) / FADE);
+      const v = Math.round((1 - t * t * (3 - 2 * t)) * 255);
+      const k = (j * size + i) * 4;
+      img.data[k] = img.data[k + 1] = img.data[k + 2] = v;
+      img.data[k + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  return new THREE.CanvasTexture(c);
+}
 
 function tileTexture(): THREE.CanvasTexture {
   const c = document.createElement('canvas');
@@ -67,9 +94,10 @@ function perforatedTexture(): THREE.CanvasTexture {
 export function Floor() {
   const tiles = useMemo(() => {
     const t = tileTexture();
-    t.repeat.set(HALL.w / TILE, HALL.d / TILE);
+    t.repeat.set(SLAB_W / TILE, SLAB_D / TILE);
     return t;
   }, []);
+  const fade = useMemo(fadeTexture, []);
   const perf = useMemo(() => {
     const t = perforatedTexture();
     t.repeat.set((ROW_LEN + 0.3) / TILE, (AISLE.cold - 0.12) / TILE);
@@ -79,19 +107,16 @@ export function Floor() {
     () => () => {
       tiles.dispose();
       perf.dispose();
+      fade.dispose();
     },
-    [tiles, perf],
+    [tiles, perf, fade],
   );
 
   return (
     <group>
-      <mesh rotation-x={-Math.PI / 2} position={[0, -0.02, 0]} raycast={noRaycast}>
-        <planeGeometry args={[400, 400]} />
-        <meshStandardMaterial color={C.ground} roughness={1} />
-      </mesh>
-      <mesh rotation-x={-Math.PI / 2} position={[HALL.cx, 0, HALL.cz]} raycast={noRaycast}>
-        <planeGeometry args={[HALL.w, HALL.d]} />
-        <meshStandardMaterial map={tiles} roughness={0.95} />
+      <mesh rotation-x={-Math.PI / 2} position={[HALL.cx, 0, HALL.cz]} renderOrder={-1} raycast={noRaycast}>
+        <planeGeometry args={[SLAB_W, SLAB_D]} />
+        <meshStandardMaterial map={tiles} alphaMap={fade} transparent roughness={0.95} />
       </mesh>
       {coldAisleZs().map((z) => (
         <mesh key={`cold-${z}`} rotation-x={-Math.PI / 2} position={[ROW_CX, 0.003, z]} raycast={noRaycast}>
@@ -179,7 +204,7 @@ function FloorText({
   height,
   color,
   opacity = 1,
-  weight = 600,
+  weight = 500,
   register,
 }: {
   text: string;
@@ -250,7 +275,6 @@ export function FloorLabels({ parts }: { parts: Record<string, PartBox> }) {
           position={[ROW_X0 + 0.95, y, rowZ(row) + rowFacing(row) * (RACK.d / 2 + 0.45)]}
           height={0.36}
           color={C.label}
-          weight={700}
         />
       ))}
       {Array.from({ length: PAIR_COUNT }, (_, p) => (

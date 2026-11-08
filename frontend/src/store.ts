@@ -15,6 +15,8 @@ export interface Hover {
   y: number;
 }
 
+export type PanelName = 'sidebar' | 'feed' | 'metrics' | 'caption' | 'legend';
+
 interface CameraRequest {
   seq: number;
   target: FocusTarget;
@@ -32,6 +34,7 @@ interface AppState {
   camera: CameraRequest;
   playing: boolean;
   follow: boolean;
+  panels: Record<PanelName, boolean>; // true = open
 
   setMode: (m: Mode) => void;
   next: () => void;
@@ -44,6 +47,7 @@ interface AppState {
   focus: (t: FocusTarget) => void;
   overview: () => void;
   setHover: (h: Hover | null) => void;
+  togglePanel: (p: PanelName) => void;
 }
 
 const site = buildSite();
@@ -60,6 +64,7 @@ export const useStore = create<AppState>((set, get) => ({
   camera: { seq: 0, target: { kind: 'overview' } },
   playing: false,
   follow: true,
+  panels: { sidebar: true, feed: true, metrics: true, caption: true, legend: true },
 
   setMode: (mode) => {
     set({ mode });
@@ -146,6 +151,7 @@ export const useStore = create<AppState>((set, get) => ({
   overview: () => set((s) => ({ selection: null, camera: { seq: s.camera.seq + 1, target: { kind: 'overview' } } })),
 
   setHover: (hover) => set({ hover }),
+  togglePanel: (p) => set((s) => ({ panels: { ...s.panels, [p]: !s.panels[p] } })),
 }));
 
 export const stepCount = (mode: Mode) => SCENARIOS[mode].length;
