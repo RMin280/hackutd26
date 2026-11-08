@@ -1,51 +1,46 @@
-// One palette for the 3D scene and the panels (mirrors the CSS variables in styles.css).
-// Calm by default: healthy equipment stays graphite, colour means "look here".
+// Scene palette, from NMC²'s brand: black, azure #2b9cfc, deep blue #0066cc,
+// pale blue #c0d1f1 and sand gold #ddb67c. Red is the one non-brand colour,
+// kept for failures. Healthy equipment stays neutral; colour means "look here".
 
 export const C = {
-  bg: '#0e0f12',
-  ground: '#0f1013',
-  hallFloor: '#1f2126',
-  tileLine: '#2a2d33',
-  coldAisle: '#1b222b',
-  coldDot: '#28323e',
-  hotAisle: '#2a1d19',
-  hotGlass: '#ff8f57',
-  hotFrame: '#6e4634',
-  label: '#8a8f99',
-  hotLabel: '#b06d4c',
+  bg: '#050505',
+  hallFloor: '#161618',
+  tileLine: '#212124',
+  coldAisle: '#0c131c',
+  coldDot: '#132131',
+  hotAisle: '#15120d',
+  hotGlass: '#ddb67c',
+  hotFrame: '#6f5a3c',
+  label: '#77777c',
+  hotLabel: '#a58b62',
 
-  rackBody: '#30333a',
-  rackBodyHover: '#434852',
-  rackBodyLit: '#3c414a',
-  rackBodyDim: '#1f2125',
-  stripOk: '#2d6b52',
+  rackBody: '#2a2a2d',
+  rackBodyHover: '#3a3a3e',
+  rackBodyLit: '#343438',
+  rackBodyDim: '#1c1c1e',
+  stripOk: '#123d63',
 
-  text: '#f2f3f5',
-  muted: '#8b8e95',
-
-  blue: '#4c8dff',
-  green: '#4ade80',
-  amber: '#e5a83b',
-  red: '#f06a6a',
-  teal: '#2dd4bf',
-  purple: '#8b7cf6',
-  orange: '#e8743b',
+  azure: '#2b9cfc',
+  blue: '#0066cc',
+  ice: '#c0d1f1',
+  gold: '#ddb67c',
+  red: '#e5534b',
+  white: '#f5f5f5',
 
   // node panels
-  nodeJob: '#34486b',
-  nodeTenant: '#35383f',
-  nodeFree: '#24262b',
+  nodeJob: '#1d3b5e',
+  nodeTenant: '#2c2c30',
+  nodeFree: '#1a1a1c',
 
-  // part bodies by group
-  power: '#36322d',
-  cooling: '#2b343d',
-  network: '#322f45',
-  partCap: '#454952',
+  // equipment
+  partBody: '#232326',
+  partBodyHover: '#323236',
+  partCap: '#3b3b40',
 };
 
 export const STATE_COLOR: Record<string, string> = {
-  ok: '#3a3d45',
-  degraded: C.amber,
+  ok: C.partCap,
+  degraded: C.gold,
   failed: C.red,
-  maintenance: C.purple,
+  maintenance: C.ice,
 };

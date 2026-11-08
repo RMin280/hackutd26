@@ -25,6 +25,8 @@ In plain words:
 | `DESIGN.md` | Source of truth: facility model, algorithms, MCP tools, security, scenario, scale limits, roadmap | **Current** (v0.4) |
 | `FRONTEND.md` | Control-room view features in P0 / P1 / P2 tiers, what not to build, endpoints, build order | **Current** |
 | `.claude/skills/blast-radius-dev/SKILL.md` | Step-by-step workflow Claude Code follows when changing code | **Current** |
+| `spacetimedb/` | Backend: SpacetimeDB module (tables + reducers), the interlock with work scopes, diagnosis, placement, the presenter's scenario, the diagnostics test bed, tests. Start with its `README.md` | **Current** (not yet published to a live server) |
+| `frontend/src/live/` | Live mode: the control room fed by the backend's tables; presenter keys call the backend's scenario reducers. Off unless `frontend/.env.local` sets `VITE_SPACETIMEDB_URI` | **Current** (bindings not generated yet) |
 | `three-playground.html` | Standalone three.js sandbox of the demo hall that plays the story with 4 buttons. Exploration only | Prototype |
 | Team doc: [Blast Radius — Team Pitch & Explainer](https://claude.ai/artifact/333tugs6RPJvKxT4egcKVG) | Explainer for teammates | **Partly outdated:** the demo plan section is current; the story and pitch sections still tell the old "3am battery" version. Use the pitch in §6 below. |
 
@@ -44,6 +46,9 @@ In plain words:
 | **Scalability rules + performance tests** | Scalability is our #2 concern. The computing scales because every question touches only one branch of a shallow map; tests make sure nobody breaks that |
 | Wording: "each agent sees only its own slice; nothing referees" | Agents *can* message each other; claiming they can't is wrong. Talking isn't coordinating, and humans aren't in those channels |
 | 2D SVG map first; three.js 3D only as a P2 toggle | 3D is impressive but costs time and readability; the 2D map is the safe fallback |
+| **Backend on SpacetimeDB** (one TypeScript module) | Every reducer is a transaction, so two actors can never claim the same backup at the same instant: the second sees the first's lease. Clients subscribe to tables for live updates (replaces SSE). TypeScript matches the frontend and its mock engine |
+| **Scenario on the backend; fresh database = diagnostics test bed** | The view only renders; the backend runs each step as the scripted actors, checked step by step against the frontend mock. A fresh database holds five incidents with a private answer key so diagnostic agents can be tested and graded |
+| **Work scopes** for maintenance | Hardware claims space (node ⊂ rack ⊂ hot aisle) or a facility part; software is either online (shares nodes with jobs) or drain-required (runs alone); one maintenance item per node at a time. Then the backup check runs with every overlapping lease (DESIGN.md §4.4) |
 
 ## 4. Mentor / judge feedback so far
 
@@ -57,7 +62,7 @@ Add new feedback here. New ideas from mentors go to the roadmap (`DESIGN.md` §1
 
 **Build:**
 - Facility map down to nodes and network switches (demo hall: 10 rows × 16 racks × 8 nodes = 1,280 nodes; `job-train-1` on 1,000 nodes in Rows 1–8)
-- Action check: remaining backup, simulate, leases with earliest safe time, protection locks
+- Action check: remaining backup, simulate, leases with earliest safe time, protection locks, work scopes (node / rack / hot aisle / facility part; online vs drain-required software)
 - Failure diagnosis: shared cause vs isolated, at-risk nodes, who to send (hardcoded by cause)
 - Safe placement: healthy, full-backup, outside the affected branch, no booked maintenance
 - MCP server with 7 tools: `check_risk`, `simulate`, `request_lease`, `release_lease`, `get_events`, `diagnose_failure`, `safe_placement`
@@ -100,11 +105,11 @@ Add new feedback here. New ideas from mentors go to the roadmap (`DESIGN.md` §1
 
 ## 8. Next steps (in order)
 
-1. **Settle team questions** (5 min): owners for the four areas (see team doc demo plan), **who owns "no" on scope**, confirm the stack (Python + FastAPI + MCP SDK, React + Vite + TS).
+1. **Settle team questions** (5 min): owners for the four areas (see team doc demo plan), **who owns "no" on scope**. Stack is decided: SpacetimeDB (TypeScript module) + React/Vite/TS.
 2. **Create the repo** with `CLAUDE.md`, `DESIGN.md`, `FRONTEND.md`, `HANDOFF.md` and `.claude/skills/blast-radius-dev/SKILL.md`.
-3. **First build task:** `data/site.json` (demo hall) + `backend/facility.py` (indexes) + `backend/guard.py` (margins, simulate), tested from the command line.
-4. In parallel: `tools/gen_site.py` + `tests/test_scale.py` skeleton, so performance limits are enforced from day one.
-5. Then: `diagnose.py` → `placement.py` → MCP server → scripted agents → scenario runner.
+3. **Done:** `spacetimedb/` has the demo hall, the interlock (scopes, leases, earliest safe time), diagnosis, placement, protection and their tests. **Next:** first real `spacetime publish` (see `spacetimedb/README.md`), `npm run bindings` in `frontend/`, then check live mode in the browser. Diagnostic agents can work the test bed through the reducers today; the MCP adapter comes after.
+4. Scale limits are enforced by `spacetimedb/test/scale/scale.test.ts` (`npm run test:scale`); quote its numbers in the pitch.
+5. Then: MCP server (thin adapter over the module's HTTP API) → scripted agents → scenario runner.
 6. Frontend in FRONTEND.md's build order: static map → live SSE → decision feed → controls → cards → rack panel.
 7. **Halfway checkpoint:** if the minimum demo doesn't run end to end, cut to it.
 8. **At ~75% of the time:** feature freeze. Rehearse, record measured scale numbers, put them in the pitch.
@@ -113,7 +118,6 @@ Add new feedback here. New ideas from mentors go to the roadmap (`DESIGN.md` §1
 ## 9. Open questions
 
 - Team owners and the "no" owner (see §8).
-- Stack confirmation.
 - Demo hall size: is 1,280 nodes enough spares to make placement convincing?
 - Is anyone strong in three.js? If not, skip 3D entirely.
 - Do we update the team doc's story and pitch sections to the big-job version before sharing it further?

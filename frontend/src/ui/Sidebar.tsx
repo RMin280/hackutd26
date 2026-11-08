@@ -1,126 +1,150 @@
 import { useStore, stepTitles } from '../store';
 import { clock } from './format';
 import { SCENARIOS } from '../mock/scenario';
-import { IconLogo, IconMap, IconNext, IconPause, IconPlay, IconReset, IconShield } from './Icons';
+import { IconChevron, IconNext, IconPause, IconPlay, IconReset } from './Icons';
 
 const LEGEND: { swatch: string; text: string }[] = [
   { swatch: 'rack-ok', text: 'Full backup' },
   { swatch: 'rack-warn', text: 'One failure from outage' },
   { swatch: 'rack-bad', text: 'No working feed' },
-  { swatch: 'zone-protected', text: 'Protected by lease' },
+  { swatch: 'protected', text: 'Protected by lease' },
   { swatch: 'node-job', text: 'job-train-1 node' },
-  { swatch: 'node-teal', text: 'Safe restart node' },
-  { swatch: 'node-amber', text: 'At risk' },
-  { swatch: 'node-red', text: 'Failed' },
+  { swatch: 'node-safe', text: 'Safe restart node' },
+  { swatch: 'node-risk', text: 'At risk' },
+  { swatch: 'node-failed', text: 'Failed' },
   { swatch: 'aisle-hot', text: 'Hot aisle' },
   { swatch: 'aisle-cold', text: 'Cold aisle' },
 ];
+
+function Transport({ compact }: { compact?: boolean }) {
+  const stepIndex = useStore((s) => s.stepIndex);
+  const mode = useStore((s) => s.mode);
+  const playing = useStore((s) => s.playing);
+  const setPlaying = useStore((s) => s.setPlaying);
+  const next = useStore((s) => s.next);
+  const reset = useStore((s) => s.reset);
+  const done = stepIndex >= stepTitles(mode).length - 1;
+  const play = () => {
+    if (done) reset();
+    setPlaying(!playing);
+  };
+  const label = playing ? 'Pause' : done ? 'Replay' : 'Play';
+
+  return (
+    <div className={compact ? 'transport transport-compact' : 'transport'}>
+      {compact ? (
+        <button className="icon-btn icon-btn-accent" onClick={play} title={`${label} (P)`} aria-label={label}>
+          {playing ? <IconPause /> : <IconPlay />}
+        </button>
+      ) : (
+        <button className="btn-primary" onClick={play} title={`${label} (P)`}>
+          {playing ? <IconPause /> : <IconPlay />}
+          {label}
+        </button>
+      )}
+      <button className="icon-btn" onClick={next} disabled={done} title="Next step (Space)" aria-label="Next step">
+        <IconNext />
+      </button>
+      <button className="icon-btn" onClick={reset} title="Reset (R)" aria-label="Reset">
+        <IconReset />
+      </button>
+    </div>
+  );
+}
 
 export function Sidebar() {
   const mode = useStore((s) => s.mode);
   const setMode = useStore((s) => s.setMode);
   const stepIndex = useStore((s) => s.stepIndex);
-  const playing = useStore((s) => s.playing);
-  const setPlaying = useStore((s) => s.setPlaying);
-  const next = useStore((s) => s.next);
-  const reset = useStore((s) => s.reset);
   const goTo = useStore((s) => s.goTo);
   const follow = useStore((s) => s.follow);
   const setFollow = useStore((s) => s.setFollow);
-  const overview = useStore((s) => s.overview);
+  const open = useStore((s) => s.panels.sidebar);
+  const legendOpen = useStore((s) => s.panels.legend);
+  const toggle = useStore((s) => s.togglePanel);
 
   const titles = stepTitles(mode);
   const steps = SCENARIOS[mode];
-  const done = stepIndex >= titles.length - 1;
+
+  if (!open) {
+    return (
+      <aside className="sidebar rail">
+        <button className="icon-btn" onClick={() => toggle('sidebar')} title="Show scenario panel" aria-label="Show scenario panel">
+          <IconChevron dir="right" />
+        </button>
+        <Transport compact />
+        <span className="rail-meta">
+          {stepIndex < 0 ? '–' : stepIndex + 1}/{titles.length}
+        </span>
+      </aside>
+    );
+  }
 
   return (
-    <aside className="panel sidebar">
-      <div className="brand">
-        <IconLogo />
-        <span>Blast Radius</span>
-      </div>
-
-      <div className="side-section">
-        <div className="side-label">Main menu</div>
-        <button className="nav-item active" onClick={overview}>
-          <IconMap />
-          <span>Floor map</span>
-          <span className="nav-meta">Hall A</span>
+    <aside className="sidebar">
+      <header className="side-head">
+        <span className="wordmark">Blast Radius</span>
+        <button className="icon-btn" onClick={() => toggle('sidebar')} title="Hide panel" aria-label="Hide scenario panel">
+          <IconChevron dir="left" />
         </button>
-      </div>
+      </header>
 
-      <div className="side-section">
-        <div className="side-label">Scheduler mode</div>
-        <div className="segmented" role="tablist">
-          <button className={mode === 'naive' ? 'on' : ''} onClick={() => setMode('naive')}>
+      <section className="side-section">
+        <h2 className="eyebrow">Scheduler</h2>
+        <div className="segmented" role="radiogroup" aria-label="Scheduler mode">
+          <button role="radio" aria-checked={mode === 'naive'} className={mode === 'naive' ? 'on' : ''} onClick={() => setMode('naive')}>
             Naive
           </button>
-          <button className={mode === 'blast_radius' ? 'on' : ''} onClick={() => setMode('blast_radius')}>
-            <IconShield /> Blast Radius
+          <button role="radio" aria-checked={mode === 'blast_radius'} className={mode === 'blast_radius' ? 'on' : ''} onClick={() => setMode('blast_radius')}>
+            Blast Radius
           </button>
         </div>
-      </div>
+      </section>
 
-      <div className="side-section grow">
-        <div className="side-label">Scenario · Big job failure</div>
-        <div className="steps">
+      <section className="side-section side-steps">
+        <h2 className="eyebrow">Scenario · Big job failure</h2>
+        <ol className="steps">
           {titles.map((t, i) => (
-            <button
-              key={`${mode}-${i}`}
-              className={`step ${i === stepIndex ? 'current' : i < stepIndex ? 'past' : ''}`}
-              onClick={() => goTo(i)}
-            >
-              <span className="step-num">{i + 1}</span>
-              <span className="step-title">{t}</span>
-              <span className="step-time">{clock(steps[i].at)}</span>
-            </button>
-          ))}
-        </div>
-        <div className="controls">
-          <button
-            className="btn primary"
-            onClick={() => {
-              if (done) reset();
-              setPlaying(!playing);
-            }}
-            title="Play / pause (P)"
-          >
-            {playing ? <IconPause /> : <IconPlay />}
-            {playing ? 'Pause' : done ? 'Replay' : 'Play'}
-          </button>
-          <button className="btn icon" onClick={next} disabled={done} title="Next step (Space)">
-            <IconNext />
-          </button>
-          <button className="btn icon" onClick={reset} title="Reset (R)">
-            <IconReset />
-          </button>
-        </div>
-        <label className="toggle">
-          <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} />
-          <span className="toggle-track" />
-          <span>Camera follows events</span>
-        </label>
-      </div>
-
-      <div className="side-section">
-        <div className="side-label">Legend</div>
-        <ul className="legend">
-          {LEGEND.map((l) => (
-            <li key={l.text}>
-              <span className={`swatch ${l.swatch}`} />
-              {l.text}
+            <li key={`${mode}-${i}`}>
+              <button
+                className={`step ${i === stepIndex ? 'current' : i < stepIndex ? 'past' : ''}`}
+                aria-current={i === stepIndex ? 'step' : undefined}
+                title={t}
+                onClick={() => goTo(i)}
+              >
+                <span className="step-num">{String(i + 1).padStart(2, '0')}</span>
+                <span className="step-title">{t}</span>
+                <span className="step-time">{clock(steps[i].at)}</span>
+              </button>
             </li>
           ))}
-        </ul>
-      </div>
+        </ol>
+        <Transport />
+        <label className="check">
+          <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} />
+          <span className="check-box" aria-hidden />
+          Camera follows events
+        </label>
+      </section>
 
-      <div className="profile">
-        <div className="avatar">SL</div>
-        <div>
-          <div className="profile-name">Control room</div>
-          <div className="profile-sub">shift_lead · Hall A</div>
-        </div>
-      </div>
+      <section className="side-section side-legend">
+        <button className="disclosure" onClick={() => toggle('legend')} aria-expanded={legendOpen}>
+          <span className="eyebrow">Legend</span>
+          <IconChevron dir={legendOpen ? 'up' : 'down'} />
+        </button>
+        {legendOpen && (
+          <ul className="legend">
+            {LEGEND.map((l) => (
+              <li key={l.text}>
+                <span className={`swatch swatch-${l.swatch}`} aria-hidden />
+                {l.text}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <footer className="side-foot">Signed in as shift_lead · Hall A</footer>
     </aside>
   );
 }

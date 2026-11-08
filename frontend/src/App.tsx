@@ -6,7 +6,7 @@ import { StatTiles } from './ui/StatTiles';
 import { DecisionFeed } from './ui/DecisionFeed';
 import { DetailCard } from './ui/DetailCard';
 import { clock } from './ui/format';
-import { IconCalendar, IconShield, IconTarget } from './ui/Icons';
+import { IconChevron, IconTarget } from './ui/Icons';
 
 const AUTOPLAY_MS = 4200;
 
@@ -21,44 +21,62 @@ function Tooltip() {
   );
 }
 
+function TopBar() {
+  const now = useStore((s) => s.world.now);
+  const stepIndex = useStore((s) => s.stepIndex);
+  const metricsOpen = useStore((s) => s.panels.metrics);
+  const toggle = useStore((s) => s.togglePanel);
+  return (
+    <header className="topbar">
+      <p className="context">
+        <span className="context-strong">Hall A</span>160 racks · 1,280 nodes
+      </p>
+      <div className="topbar-end">
+        <p className="sim-clock">
+          <span className="sim-clock-value">{stepIndex < 0 ? 'T+0m' : clock(now)}</span>simulated
+        </p>
+        <button
+          className="icon-btn"
+          onClick={() => toggle('metrics')}
+          title={metricsOpen ? 'Hide metrics' : 'Show metrics'}
+          aria-label={metricsOpen ? 'Hide metrics' : 'Show metrics'}
+          aria-expanded={metricsOpen}
+        >
+          <IconChevron dir={metricsOpen ? 'up' : 'down'} />
+        </button>
+      </div>
+    </header>
+  );
+}
+
 function Caption() {
   const caption = useStore((s) => s.caption);
   const stepIndex = useStore((s) => s.stepIndex);
   const mode = useStore((s) => s.mode);
+  const open = useStore((s) => s.panels.caption);
+  const toggle = useStore((s) => s.togglePanel);
   const total = stepCount(mode);
   return (
-    <div className="panel caption" key={`${mode}-${stepIndex}`}>
+    <div className={`caption ${open ? '' : 'caption-closed'}`}>
       <div className="caption-head">
-        <span className={`caption-mode ${mode}`}>
-          {mode === 'blast_radius' ? (
-            <>
-              <IconShield /> Blast Radius
-            </>
-          ) : (
-            'Naive scheduler'
-          )}
-        </span>
+        <span className={`caption-mode tone-${mode === 'blast_radius' ? 'azure' : 'red'}`}>{mode === 'blast_radius' ? 'Blast Radius' : 'Naive scheduler'}</span>
         <span className="caption-step">{stepIndex < 0 ? 'Ready' : `Step ${stepIndex + 1} of ${total}`}</span>
+        <button
+          className="icon-btn"
+          onClick={() => toggle('caption')}
+          title={open ? 'Hide narration' : 'Show narration'}
+          aria-label={open ? 'Hide narration' : 'Show narration'}
+          aria-expanded={open}
+        >
+          <IconChevron dir={open ? 'down' : 'up'} />
+        </button>
       </div>
-      <p>{caption}</p>
+      {open && (
+        <p className="caption-text" key={`${mode}-${stepIndex}`}>
+          {caption}
+        </p>
+      )}
     </div>
-  );
-}
-
-function ViewControls() {
-  const overview = useStore((s) => s.overview);
-  return (
-    <>
-      <button className="panel view-btn" onClick={overview} title="Back to overview (Esc)">
-        <IconTarget /> Overview
-      </button>
-      <div className="nav-hint">
-        <span><kbd>Drag</kbd> pan</span>
-        <span><kbd>Right-drag</kbd> rotate</span>
-        <span><kbd>Scroll</kbd> zoom</span>
-        <span><kbd>WASD</kbd> move</span>
-      </div>
-    </>
   );
 }
 
@@ -110,33 +128,29 @@ function useAutoplay() {
 export default function App() {
   useKeys();
   useAutoplay();
-  const now = useStore((s) => s.world.now);
-  const stepIndex = useStore((s) => s.stepIndex);
+  const panels = useStore((s) => s.panels);
+  const hasSelection = useStore((s) => s.selection !== null);
+  const overview = useStore((s) => s.overview);
+  // The right column stays open while a card is showing, even if the feed is collapsed.
+  const rightOpen = panels.feed || hasSelection;
 
   return (
     <div className="app">
       <Hall />
-      <div className="hud">
+      <div className={`hud${panels.sidebar ? '' : ' left-closed'}${rightOpen ? '' : ' right-closed'}`}>
         <Sidebar />
-        <header className="topbar">
-          <div className="title">
-            <h1>Overview</h1>
-            <p>Hall A · 160 racks · 1,280 nodes · every action checked before it happens</p>
-          </div>
-          <div className="panel clock-pill">
-            <IconCalendar />
-            <span>{stepIndex < 0 ? 'T+0m' : clock(now)}</span>
-            <span className="clock-sep" />
-            <span className="muted">Simulated time</span>
-          </div>
-        </header>
-        <StatTiles />
+        <div className="top">
+          <TopBar />
+          {panels.metrics && <StatTiles />}
+        </div>
         <div className="scene-frame">
-          <ViewControls />
+          <button className="view-btn" onClick={overview} title="Back to overview (Esc)">
+            <IconTarget />
+            Overview
+          </button>
+          <p className="nav-hint">Drag to pan · Right-drag to rotate · Scroll to zoom · WASD to move</p>
         </div>
-        <div className="bottombar">
-          <Caption />
-        </div>
+        <Caption />
         <div className="rightcol">
           <DecisionFeed />
           <DetailCard />

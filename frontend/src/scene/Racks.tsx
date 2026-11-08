@@ -47,7 +47,7 @@ export function Racks() {
         tmpObj.updateMatrix();
         stripRef.current.setMatrixAt(side === 1 ? i : i + R, tmpObj.matrix);
       }
-      lidRef.current.setColorAt(i, tmpColor.set(C.amber)); // allocates instanceColor up front
+      lidRef.current.setColorAt(i, tmpColor.set(C.gold)); // allocates instanceColor up front
     });
     site.nodeOrder.forEach((nid, i) => {
       for (const side of [1, -1] as const) {
@@ -82,7 +82,7 @@ export function Racks() {
     site.rackOrder.forEach((rid, i) => {
       bodyRef.current.setColorAt(i, tmpColor.set(bodyColor(i)));
       const level = world.margins[rid].level;
-      const strip = level === 'green' ? C.stripOk : level === 'yellow' ? C.amber : C.red;
+      const strip = level === 'green' ? C.stripOk : level === 'yellow' ? C.gold : C.red;
       tmpColor.set(strip);
       stripRef.current.setColorAt(i, tmpColor);
       stripRef.current.setColorAt(i + R, tmpColor);
@@ -96,7 +96,7 @@ export function Racks() {
       tmpObj.position.set(x, RACK.h + 0.012, z);
       tmpObj.updateMatrix();
       lidRef.current.setMatrixAt(j, tmpObj.matrix);
-      lidRef.current.setColorAt(j, tmpColor.set(world.margins[rid].level === 'yellow' ? C.amber : C.red));
+      lidRef.current.setColorAt(j, tmpColor.set(world.margins[rid].level === 'yellow' ? C.gold : C.red));
     });
     lidRef.current.count = problems.length;
     lidRef.current.instanceMatrix.needsUpdate = true;
@@ -119,9 +119,9 @@ export function Racks() {
 
   const nodeColor = (n: string): string => {
     if (world.nodeState[n] === 'failed') return C.red;
-    if (atRisk.has(n)) return C.amber;
+    if (atRisk.has(n)) return C.gold;
     const o = world.owner[n];
-    if (placed.has(n)) return C.teal;
+    if (placed.has(n)) return C.ice;
     if (o.kind === 'job') return C.nodeJob;
     if (o.kind === 'tenant') return C.nodeTenant;
     return C.nodeFree;

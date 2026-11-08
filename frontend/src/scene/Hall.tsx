@@ -7,6 +7,7 @@ import { useStore } from '../store';
 import { C } from '../theme';
 import { HALL, buildPartLayout, type PartBox } from './layout';
 import { resolveShot, shotFor, type Frame } from './camera';
+import type { FocusTarget } from '../model/types';
 import { Racks } from './Racks';
 import { Parts } from './Parts';
 import { Containment, Floor, FloorLabels } from './Floor';
@@ -61,12 +62,55 @@ function CameraRig({ layout }: { layout: Record<string, PartBox> }) {
     c.setBoundary(new THREE.Box3(new THREE.Vector3(HALL.x0 - 5, 0, HALL.z0 - 3), new THREE.Vector3(HALL.x1 + 3, 2.5, HALL.z1 + 3)));
   }, []);
 
-  useEffect(() => {
+  // Fly to each new focus request. Remember it, so a layout change can re-frame it.
+  const userMoved = useRef(false);
+  const current = useRef(request.target);
+  const frameTarget = (target: FocusTarget, smooth: boolean) => {
     const c = ref.current;
     if (!c) return;
-    const { pos, target } = resolveShot(shotFor(site, layout, request.target), camera, readFrame(canvas));
-    void c.setLookAt(pos.x, pos.y, pos.z, target.x, target.y, target.z, request.seq > 0);
+    const { pos, target: look } = resolveShot(shotFor(site, layout, target), camera, readFrame(canvas));
+    void c.setLookAt(pos.x, pos.y, pos.z, look.x, look.y, look.z, smooth);
+  };
+
+  useEffect(() => {
+    userMoved.current = false;
+    current.current = request.target;
+    frameTarget(request.target, request.seq > 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [request, site, layout, camera, canvas]);
+
+  // When panels open or close (or the window resizes) the free area changes: re-frame the
+  // current shot, unless the user has since moved the camera themselves.
+  const layoutKey = useStore((s) => `${s.panels.sidebar}${s.panels.feed || s.selection !== null}${s.panels.metrics}${s.panels.caption}`);
+  useEffect(() => {
+    let timer = 0;
+    const refit = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        if (!userMoved.current) frameTarget(current.current, true);
+      }, 280); // after the grid transition settles
+    };
+    refit();
+    window.addEventListener('resize', refit);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('resize', refit);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layoutKey]);
+
+  useEffect(() => {
+    const c = ref.current;
+    const moved = () => {
+      userMoved.current = true;
+    };
+    c?.addEventListener('controlstart', moved);
+    canvas.addEventListener('wheel', moved, { passive: true });
+    return () => {
+      c?.removeEventListener('controlstart', moved);
+      canvas.removeEventListener('wheel', moved);
+    };
+  }, [canvas]);
 
   useEffect(() => {
     const typing = (e: KeyboardEvent) => {
@@ -98,6 +142,7 @@ function CameraRig({ layout }: { layout: Record<string, PartBox> }) {
     const c = ref.current;
     const k = keys.current;
     if (!c || k.size === 0) return;
+    userMoved.current = true;
     const step = Math.min(dt, 0.05);
     const speed = Math.max(c.distance, 4) * 0.9 * step * (fast.current ? 2.4 : 1);
     if (k.has('w')) void c.forward(speed, false);
@@ -144,11 +189,11 @@ export function Hall() {
       }}
     >
       <color attach="background" args={[C.bg]} />
-      <fog attach="fog" args={[C.bg, 60, 170]} />
-      <hemisphereLight args={['#d8e0ff', '#14151a', 1.1]} />
-      <ambientLight intensity={0.3} />
+      <fog attach="fog" args={[C.bg, 55, 150]} />
+      <hemisphereLight args={['#ffffff', '#0a0a0a', 1.05]} />
+      <ambientLight intensity={0.28} />
       <directionalLight position={[10, 26, 18]} intensity={2.0} />
-      <directionalLight position={[-16, 12, -14]} intensity={0.6} color="#a9b8ff" />
+      <directionalLight position={[-16, 12, -14]} intensity={0.5} color="#c0d1f1" />
 
       <Floor />
       <ContactShadows

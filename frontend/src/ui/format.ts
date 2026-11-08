@@ -1,28 +1,30 @@
 import type { MarginLevel, Owner, PartState, Verdict } from '../model/types';
 
+// Colour is reserved for meaning: healthy stays neutral ('ok'), gold and red mark
+// problems, azure is the product's own voice (actions, protection), ice is a safe placement.
+export type Tone = 'ok' | 'gold' | 'red' | 'azure' | 'ice' | 'muted';
+
 export const marginText = (l: MarginLevel) =>
   l === 'green' ? 'Full backup' : l === 'yellow' ? 'One failure from an outage' : 'No working feed';
 
-export const marginTone = (l: MarginLevel): Tone => (l === 'green' ? 'green' : l === 'yellow' ? 'amber' : 'red');
+export const marginTone = (l: MarginLevel): Tone => (l === 'green' ? 'ok' : l === 'yellow' ? 'gold' : 'red');
 
 export const stateTone = (s: PartState): Tone =>
-  s === 'ok' ? 'green' : s === 'degraded' ? 'amber' : s === 'failed' ? 'red' : 'purple';
+  s === 'ok' ? 'ok' : s === 'degraded' ? 'gold' : s === 'failed' ? 'red' : 'ice';
 
 export const stateText = (s: PartState) => (s === 'ok' ? 'OK' : s[0].toUpperCase() + s.slice(1));
 
 export const ownerText = (o: Owner) =>
   o.kind === 'job' ? o.id : o.kind === 'tenant' ? o.id : 'Free spare';
 
-export type Tone = 'green' | 'amber' | 'red' | 'blue' | 'teal' | 'purple' | 'muted';
-
 export const VERDICT: Record<Verdict, { text: string; tone: Tone }> = {
-  allow: { text: 'Allowed', tone: 'green' },
-  warn: { text: 'Warning', tone: 'amber' },
+  allow: { text: 'Allowed', tone: 'azure' },
+  warn: { text: 'Warning', tone: 'gold' },
   deny: { text: 'Denied', tone: 'red' },
   failure: { text: 'Failure', tone: 'red' },
-  shared_cause: { text: 'Shared cause', tone: 'amber' },
-  isolated: { text: 'Isolated', tone: 'blue' },
-  placement: { text: 'Placed', tone: 'teal' },
+  shared_cause: { text: 'Shared cause', tone: 'gold' },
+  isolated: { text: 'Isolated', tone: 'ice' },
+  placement: { text: 'Placed', tone: 'ice' },
   info: { text: 'Info', tone: 'muted' },
 };
 

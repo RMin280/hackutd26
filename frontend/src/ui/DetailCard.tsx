@@ -1,68 +1,76 @@
 import type { ReactNode } from 'react';
 import { useStore } from '../store';
 import { label, partTypeName } from '../mock/site';
-import type { PartState, Selection } from '../model/types';
+import type { PartState, Selection, Site } from '../model/types';
 import { VERDICT, clock, marginText, marginTone, ownerText, stateText, stateTone, type Tone } from './format';
-import { IconAlert, IconBolt, IconClose, IconCpu, IconNetwork, IconServer, IconSnow } from './Icons';
+import { IconClose } from './Icons';
 
-function Pill({ tone, children }: { tone: Tone; children: ReactNode }) {
+function Status({ tone, children }: { tone: Tone; children: ReactNode }) {
   return (
-    <span className={`pill tone-text-${tone}`}>
-      <span className={`dot tone-${tone}`} />
+    <span className={`status tone-${tone}`}>
+      <span className="mark" aria-hidden />
       {children}
     </span>
   );
 }
 
-function Section({ title, children, right }: { title: string; children: ReactNode; right?: ReactNode }) {
+function Section({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
   return (
-    <div className="dc-section">
-      <div className="dc-section-head">
-        <span>{title}</span>
-        {right}
-      </div>
+    <section className="detail-section">
+      <header className="detail-section-head">
+        <h4 className="eyebrow">{title}</h4>
+        {aside}
+      </header>
       {children}
-    </div>
+    </section>
   );
 }
 
-function PartChip({ id }: { id: string }) {
+function Note({ tone, children }: { tone: Tone; children: ReactNode }) {
+  return <p className={`note tone-${tone}`}>{children}</p>;
+}
+
+function PartLink({ id }: { id: string }) {
   const state = useStore((s) => s.world.partState[id]) as PartState;
   const select = useStore((s) => s.select);
+  const tone = stateTone(state);
   return (
-    <button className="chip" onClick={() => select({ kind: 'part', id })} title={`${label(id)} · ${stateText(state)}`}>
-      <span className={`dot tone-${stateTone(state)}`} />
+    <button className={`part-link tone-${tone}`} onClick={() => select({ kind: 'part', id })} title={`${label(id)} · ${stateText(state)}`}>
+      {tone !== 'ok' && <span className="mark" aria-hidden />}
       {label(id)}
     </button>
   );
 }
 
-function Chain({ name, icon, chain }: { name: string; icon: ReactNode; chain: string[] }) {
+function Chains({ rows }: { rows: { name: string; chain: string[] }[] }) {
   return (
-    <div className="chain">
-      <span className="chain-name">
-        {icon}
-        {name}
-      </span>
-      <span className="chain-parts">
-        {chain.map((p, i) => (
-          <span key={p} className="chain-step">
-            {i > 0 && <span className="chain-arrow">›</span>}
-            <PartChip id={p} />
-          </span>
-        ))}
-      </span>
-    </div>
+    <dl className="chains">
+      {rows.map(({ name, chain }) => (
+        <div key={name}>
+          <dt>{name}</dt>
+          <dd>
+            {chain.map((p, i) => (
+              <span key={p} className="chain-step">
+                {i > 0 && <span className="chain-arrow" aria-hidden>→</span>}
+                <PartLink id={p} />
+              </span>
+            ))}
+          </dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 
-function Callout({ tone, children }: { tone: Tone; children: ReactNode }) {
-  return (
-    <div className={`callout callout-${tone}`}>
-      <IconAlert />
-      <span>{children}</span>
-    </div>
-  );
+function feedRows(site: Site, rackId: string) {
+  const r = site.racks[rackId];
+  return [
+    { name: 'Power A', chain: r.powerFeeds[0] },
+    { name: 'Power B', chain: r.powerFeeds[1] },
+    { name: 'Cooling', chain: r.coolingFeeds[0] },
+    { name: 'Backup', chain: r.coolingFeeds[1] },
+    { name: 'Network', chain: r.network },
+  ];
 }
 
 function LastDecision({ match }: { match: (s: Selection) => boolean }) {
@@ -71,14 +79,11 @@ function LastDecision({ match }: { match: (s: Selection) => boolean }) {
   if (!e) return null;
   const v = VERDICT[e.verdict];
   return (
-    <Section title="Latest decision" right={<span className="dc-time">{clock(e.time)}</span>}>
-      <div className="decision">
-        <div className="decision-top">
-          <span className="decision-title">{e.title}</span>
-          <Pill tone={v.tone}>{v.text}</Pill>
-        </div>
-        <p>{e.reason}</p>
-      </div>
+    <Section title="Latest decision" aside={<span className="detail-aside">{clock(e.time)}</span>}>
+      <p className="decision-title">
+        {e.title} <span className={`verdict tone-${v.tone}`}>{v.text}</span>
+      </p>
+      <p className="decision-reason">{e.reason}</p>
     </Section>
   );
 }
@@ -101,72 +106,64 @@ function RackBody({ id }: { id: string }) {
 
   return (
     <>
-      <div className="dc-status">
-        <Pill tone={marginTone(m.level)}>{marginText(m.level)}</Pill>
-        {lease && <span className="pill tone-text-blue">Protected</span>}
+      <div className="detail-status">
+        <Status tone={marginTone(m.level)}>{marginText(m.level)}</Status>
+        {lease && <Status tone="azure">Protected</Status>}
       </div>
       {single && (
-        <Callout tone="amber">
+        <Note tone="gold">
           {label(single)} is this rack's only working {site.parts[single].type === 'cdu' ? 'cooling' : 'power'} feed.
-        </Callout>
+        </Note>
       )}
-      <div className="dc-stats">
+      <dl className="facts">
         <div>
-          <span>Power feeds working</span>
-          <strong>{m.power + 1} / 2</strong>
+          <dt>Power feeds</dt>
+          <dd>{m.power + 1} of 2 working</dd>
         </div>
         <div>
-          <span>Cooling feeds working</span>
-          <strong>{m.cooling + 1} / 2</strong>
+          <dt>Cooling feeds</dt>
+          <dd>{m.cooling + 1} of 2 working</dd>
         </div>
-      </div>
-      <Section title="Nodes">
+        <div>
+          <dt>Running</dt>
+          <dd>{[...owners.entries()].map(([k, v]) => `${k} ×${v}`).join(', ')}</dd>
+        </div>
+      </dl>
+      <Section title="Nodes" aside={<span className="detail-aside">top to bottom</span>}>
         <div className="node-grid">
           {[...r.nodes].reverse().map((n) => {
             const st = world.nodeState[n];
             const o = world.owner[n];
             const cls =
               st === 'failed'
-                ? 'n-red'
+                ? 'n-failed'
                 : atRisk.has(n)
-                  ? 'n-amber'
+                  ? 'n-risk'
                   : placed.has(n)
-                    ? 'n-teal'
+                    ? 'n-safe'
                     : o.kind === 'job'
                       ? 'n-job'
                       : o.kind === 'tenant'
-                      ? 'n-tenant'
-                      : 'n-free';
+                        ? 'n-tenant'
+                        : 'n-free';
             return (
-              <button key={n} className={`node-cell ${cls}`} onClick={() => select({ kind: 'node', id: n })}>
-                <span>{n.replace('node-', '')}</span>
+              <button key={n} className={`node-cell ${cls}`} onClick={() => select({ kind: 'node', id: n })} title={n}>
+                {n.replace('node-', '')}
               </button>
             );
           })}
         </div>
-        <div className="dc-owners">
-          {[...owners.entries()].map(([k, v]) => (
-            <span key={k}>
-              {k} <strong>{v}</strong>
-            </span>
-          ))}
-        </div>
       </Section>
       <Section title="Feeds">
-        <Chain name="Power A" icon={<IconBolt />} chain={r.powerFeeds[0]} />
-        <Chain name="Power B" icon={<IconBolt />} chain={r.powerFeeds[1]} />
-        <Chain name="Cooling" icon={<IconSnow />} chain={r.coolingFeeds[0]} />
-        <Chain name="Backup" icon={<IconSnow />} chain={r.coolingFeeds[1]} />
-        <Chain name="Network" icon={<IconNetwork />} chain={r.network} />
+        <Chains rows={feedRows(site, id)} />
       </Section>
-      <Section title="Leases">
+      <Section title="Lease">
         {lease ? (
-          <p className="dc-text">
-            Protection lease for <strong>{lease.job}</strong> by {lease.actor}, until {clock(lease.end)}. Maintenance that would
-            remove this rack's backup is refused.
+          <p className="detail-text">
+            Protection lease for {lease.job}, held by {lease.actor} until {clock(lease.end)}. Maintenance that would remove this rack's backup is refused.
           </p>
         ) : (
-          <p className="dc-text muted">No lease on this rack.</p>
+          <p className="detail-text muted">No lease on this rack.</p>
         )}
       </Section>
       <LastDecision match={(s) => s.kind === 'rack' && s.id === id} />
@@ -179,7 +176,6 @@ function NodeBody({ id }: { id: string }) {
   const world = useStore((s) => s.world);
   const select = useStore((s) => s.select);
   const info = site.nodes[id];
-  const r = site.racks[info.rack];
   const st = world.nodeState[id];
   const o = world.owner[id];
   const d = world.diagnosis;
@@ -188,41 +184,40 @@ function NodeBody({ id }: { id: string }) {
 
   let role: { tone: Tone; text: string };
   if (st === 'failed') role = { tone: 'red', text: 'Failed' };
-  else if (isAtRisk) role = { tone: 'amber', text: 'At risk' };
-  else if (isPlaced) role = { tone: 'teal', text: 'Safe restart node' };
-  else if (o.kind === 'job') role = { tone: 'blue', text: `Running ${o.id}` };
+  else if (isAtRisk) role = { tone: 'gold', text: 'At risk' };
+  else if (isPlaced) role = { tone: 'ice', text: 'Safe restart node' };
+  else if (o.kind === 'job') role = { tone: 'ok', text: `Running ${o.id}` };
   else if (o.kind === 'tenant') role = { tone: 'muted', text: o.id };
   else role = { tone: 'muted', text: 'Free spare' };
 
   return (
     <>
-      <div className="dc-status">
-        <Pill tone={role.tone}>{role.text}</Pill>
-        <Pill tone={stateTone(st)}>{stateText(st)}</Pill>
+      <div className="detail-status">
+        <Status tone={role.tone}>{role.text}</Status>
       </div>
       {d && (d.node === id || isAtRisk) && (
-        <Callout tone="amber">
-          {d.node === id ? d.reason : `Shares ${label(d.cause ?? '')} with ${d.node}. Moved out of the job before it fails.`}
-        </Callout>
+        <Note tone="gold">{d.node === id ? d.reason : `Shares ${label(d.cause ?? '')} with ${d.node}. Moved out of the job before it fails.`}</Note>
       )}
-      <div className="dc-stats">
+      <dl className="facts">
         <div>
-          <span>Rack</span>
-          <button className="link" onClick={() => select({ kind: 'rack', id: r.id })}>
-            {r.id}
-          </button>
+          <dt>Rack</dt>
+          <dd>
+            <button className="part-link" onClick={() => select({ kind: 'rack', id: info.rack })}>
+              {info.rack}
+            </button>
+          </dd>
         </div>
         <div>
-          <span>Assigned to</span>
-          <strong>{ownerText(o)}</strong>
+          <dt>Assigned to</dt>
+          <dd>{ownerText(o)}</dd>
         </div>
-      </div>
+        <div>
+          <dt>State</dt>
+          <dd>{stateText(st)}</dd>
+        </div>
+      </dl>
       <Section title="Depends on">
-        <Chain name="Power A" icon={<IconBolt />} chain={r.powerFeeds[0]} />
-        <Chain name="Power B" icon={<IconBolt />} chain={r.powerFeeds[1]} />
-        <Chain name="Cooling" icon={<IconSnow />} chain={r.coolingFeeds[0]} />
-        <Chain name="Backup" icon={<IconSnow />} chain={r.coolingFeeds[1]} />
-        <Chain name="Network" icon={<IconNetwork />} chain={r.network} />
+        <Chains rows={feedRows(site, info.rack)} />
       </Section>
       <LastDecision match={(s) => s.kind === 'node' && s.id === id} />
     </>
@@ -235,58 +230,59 @@ function PartBody({ id }: { id: string }) {
   const select = useStore((s) => s.select);
   const st = world.partState[id];
   const down = site.downstream[id];
-  const yellowBecause = down.filter((rid) => world.margins[rid].unprotected.includes(id));
+  const onlyFeedFor = down.filter((rid) => world.margins[rid].unprotected.includes(id));
   const counts = { green: 0, yellow: 0, red: 0 };
   for (const rid of down) counts[world.margins[rid].level]++;
   const d = world.diagnosis;
   const leases = world.leases.filter((l) => l.target === id && world.now < l.end);
-  const shown = down.slice(0, 30);
+  const shown = down.slice(0, 32);
 
   return (
     <>
-      <div className="dc-status">
-        <Pill tone={stateTone(st)}>{stateText(st)}</Pill>
-        {yellowBecause.length > 0 && <Pill tone="amber">Only working feed</Pill>}
+      <div className="detail-status">
+        <Status tone={stateTone(st)}>{stateText(st)}</Status>
+        {onlyFeedFor.length > 0 && <Status tone="gold">Only working feed</Status>}
       </div>
-      {d?.cause === id && <Callout tone="amber">{`${d.reason} Send a ${d.send}.`}</Callout>}
-      {yellowBecause.length > 0 && d?.cause !== id && (
-        <Callout tone="amber">
-          Only working feed for {yellowBecause.length} racks. Taking it offline would leave them with no working feed.
-        </Callout>
+      {/* The diagnosis itself shows under "Latest decision"; here only the unit's own risk. */}
+      {onlyFeedFor.length > 0 && d?.cause !== id && (
+        <Note tone="gold">Only working feed for {onlyFeedFor.length} racks. Taking it offline would leave them with none.</Note>
       )}
-      <div className="dc-stats three">
+      <dl className="facts">
         <div>
-          <span>Racks below</span>
-          <strong>{down.length}</strong>
+          <dt>Racks below</dt>
+          <dd>{down.length}</dd>
         </div>
         <div>
-          <span>Full backup</span>
-          <strong className="tone-text-green">{counts.green}</strong>
+          <dt>At full backup</dt>
+          <dd>{counts.green}</dd>
         </div>
         <div>
-          <span>One from outage</span>
-          <strong className={counts.yellow ? 'tone-text-amber' : ''}>{counts.yellow + counts.red}</strong>
+          <dt>Reduced backup</dt>
+          <dd className={counts.yellow + counts.red ? 'tone-gold' : undefined}>{counts.yellow + counts.red}</dd>
         </div>
-      </div>
-      <Section title="Feeds these racks" right={down.length > shown.length ? <span className="dc-time">+{down.length - shown.length} more</span> : null}>
-        <div className="chip-wrap">
-          {shown.map((rid) => (
-            <button key={rid} className="chip" onClick={() => select({ kind: 'rack', id: rid })}>
-              <span className={`dot tone-${marginTone(world.margins[rid].level)}`} />
-              {rid.replace('rack-', '')}
-            </button>
-          ))}
+      </dl>
+      <Section title="Feeds these racks" aside={down.length > shown.length ? <span className="detail-aside">+{down.length - shown.length} more</span> : undefined}>
+        <div className="rack-list">
+          {shown.map((rid) => {
+            const tone = marginTone(world.margins[rid].level);
+            return (
+              <button key={rid} className={`part-link tone-${tone}`} onClick={() => select({ kind: 'rack', id: rid })}>
+                {tone !== 'ok' && <span className="mark" aria-hidden />}
+                {rid.replace('rack-', '')}
+              </button>
+            );
+          })}
         </div>
       </Section>
-      <Section title="Leases">
+      <Section title="Maintenance">
         {leases.length ? (
           leases.map((l) => (
-            <p key={l.id} className="dc-text">
-              Maintenance by {l.actor}, {clock(l.start)}–{clock(l.end)}
+            <p key={l.id} className="detail-text">
+              Booked by {l.actor}, {clock(l.start)}–{clock(l.end)}
             </p>
           ))
         ) : (
-          <p className="dc-text muted">No maintenance booked.</p>
+          <p className="detail-text muted">Nothing booked.</p>
         )}
       </Section>
       <LastDecision match={(s) => s.kind === 'part' && s.id === id} />
@@ -300,44 +296,39 @@ export function DetailCard() {
   const select = useStore((s) => s.select);
   if (!selection) return null;
 
+  let kind = '';
   let title = '';
   let sub = '';
-  let icon: ReactNode = null;
-  let tone = 'it-blue';
   if (selection.kind === 'rack') {
     const r = site.racks[selection.id];
+    kind = 'Rack';
     title = r.id;
-    sub = `Rack · Row ${r.row}, position ${r.pos}`;
-    icon = <IconServer />;
+    sub = `Row ${r.row}, position ${r.pos}`;
   } else if (selection.kind === 'node') {
     const n = site.nodes[selection.id];
+    kind = 'Node';
     title = n.id;
-    sub = `Node · ${n.rack}, slot ${n.slot + 1}`;
-    icon = <IconCpu />;
-    tone = 'it-purple';
+    sub = `${n.rack}, slot ${n.slot + 1}`;
   } else {
     const p = site.parts[selection.id];
+    kind = partTypeName(p.type);
     title = label(p.id);
-    sub = `${partTypeName(p.type)} · ${p.id}`;
-    const cooling = p.type === 'cdu' || p.type === 'chiller';
-    const net = p.type === 'leaf' || p.type === 'spine';
-    icon = cooling ? <IconSnow /> : net ? <IconNetwork /> : <IconBolt />;
-    tone = cooling ? 'it-teal' : net ? 'it-purple' : 'it-amber';
+    sub = p.id;
   }
 
   return (
-    <aside className="panel detail" key={`${selection.kind}-${selection.id}`}>
-      <header className="dc-head">
-        <span className={`icon-tile ${tone}`}>{icon}</span>
-        <div className="dc-titles">
-          <h3>{title}</h3>
-          <span>{sub}</span>
+    <aside className="detail" key={`${selection.kind}-${selection.id}`} aria-label={`${kind} ${title}`}>
+      <header className="detail-head">
+        <div>
+          <div className="eyebrow">{kind}</div>
+          <h3 className="detail-title">{title}</h3>
+          <div className="detail-sub">{sub}</div>
         </div>
-        <button className="btn icon ghost" onClick={() => select(null)} title="Close">
+        <button className="icon-btn" onClick={() => select(null)} title="Close" aria-label="Close">
           <IconClose />
         </button>
       </header>
-      <div className="dc-scroll">
+      <div className="detail-body">
         {selection.kind === 'rack' && <RackBody id={selection.id} />}
         {selection.kind === 'node' && <NodeBody id={selection.id} />}
         {selection.kind === 'part' && <PartBody id={selection.id} />}
