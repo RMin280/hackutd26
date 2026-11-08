@@ -68,13 +68,13 @@ The computing scales because every question touches only one branch of a shallow
 - **Agents cost nothing until there is an issue.** Triage is code; Nemotron is called only to plan and carry out a response, at most 10 calls per issue.
 - **Performance tests are part of the build** (`spacetimedb/test/scale/scale.test.ts`, simulated 100k-GPU site, 12,544 nodes, laptop, median of 20 runs). The suite fails if:
 
-| Operation | Limit | Measured (core logic, in-memory; DESIGN.md §7.2) |
+| Operation | Limit | Measured, core logic in-memory (through SpacetimeDB: DESIGN.md §7.2) |
 | --- | --- | --- |
-| `diagnose_failure` for one node | ≤ 50 ms | 0.03 ms |
-| `safe_placement` for a 1,000-node job | ≤ 100 ms | 2.6 ms |
-| `simulate` / `request_lease` | ≤ 20 ms | 0.12 ms / 0.06 ms |
-| State change → incremental recompute | ≤ 50 ms | 0.03 ms |
-| Full rebuild of the site | ≤ 1 s | 15 ms |
+| `diagnose_failure` for one node | ≤ 50 ms | 0.02 ms (5.9 ms) |
+| `safe_placement` for a 1,000-node job | ≤ 100 ms | 1.3 ms (31 ms) |
+| `simulate` / `request_lease` | ≤ 20 ms | 0.09 ms / 0.07 ms (5.9 / 5.8 ms) |
+| State change → incremental recompute | ≤ 50 ms | 0.04 ms (6.2 ms) |
+| Full rebuild of the site | ≤ 1 s | 18 ms (0.3 s) |
 
 - **Honest limit:** the real scaling challenge is keeping the facility map accurate. Production imports it from DCIM/BMS/NetBox/scheduler and flags drift; for the hackathon we say so plainly.
 

@@ -943,7 +943,7 @@ export function requestPlacement(s: Store, identity: string, args: PlacementArgs
     verdict: 'placement',
     reason: p.reason,
     focusKind: 'racks',
-    focusIds: [...new Set(p.nodes.map((n) => s.node(n)!.rack))],
+    focusIds: p.racks,
     data: { placement: String(row.id), job: args.job, nodes: p.nodes.length, needed, shortfall: p.shortfall, by: a.name },
   });
   audit(s, a, 'safe_placement', args.job, p.shortfall ? 'shortfall' : 'ok', p.reason);

@@ -11,6 +11,9 @@
 #   bash dev.sh fresh      republish and wipe the data: back to the diagnostics test bed
 #   bash dev.sh frontend   regenerate bindings and start the view (module already published)
 #   bash dev.sh test       backend tests (no SpacetimeDB needed)
+#   bash dev.sh scale      scale demo, 10k-200k GPUs: latency, rows read, failure storm (--quick: up to 100k)
+#                          --live: also through SpacetimeDB (needs `bash dev.sh server`; own database squawk-scale)
+#                          writes spacetimedb/test/scale/results/scale-report.html
 #
 # SpacetimeDB Maincloud instead of the local server (needs `spacetime login`):
 #   bash dev.sh cloud publish    publish the module to Maincloud (keeps the data unless the schema changed)
@@ -214,6 +217,25 @@ cmd_test() {
   npm test
 }
 
+cmd_scale() {
+  need_node
+  ensure_deps spacetimedb
+  local live=""
+  for a in "$@"; do [ "$a" = --live ] && live=1; done
+  if [ -n "$live" ]; then
+    # Its own database, so seeding 100k GPUs never touches the demo hall in '$DB'.
+    local sdb="${SQUAWK_SCALE_DB:-squawk-scale}"
+    DB="$sdb" publish --delete-data "$YES"
+    step "Registering a scale-test identity as admin of '$sdb'"
+    local id
+    id="$(cd "$ROOT/spacetimedb" && node --import tsx test/scale/live.ts identity "$URI")" || die "Couldn't create an identity on $URI."
+    spacetime call --server "$SERVER" "$sdb" register_actor "$id" "Scale test" admin '[]' >/dev/null || die "Couldn't register the scale-test identity."
+    export SQUAWK_SCALE_HOST="$URI" SQUAWK_SCALE_DB="$sdb"
+  fi
+  cd "$ROOT/spacetimedb"
+  npm run demo:scale -- "$@"
+}
+
 case "${1:-help}" in
   server) cmd_server ;;
   up)
@@ -225,6 +247,7 @@ case "${1:-help}" in
   frontend) frontend ;;
   check) cmd_check ;;
   test) cmd_test ;;
+  scale) shift; cmd_scale "$@" ;;
   lock) set_registration false ;;
   unlock) set_registration true ;;
   logs) spacetime logs --server "$SERVER" "$DB" ;;

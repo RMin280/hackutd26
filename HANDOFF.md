@@ -125,7 +125,7 @@ This runs end to end on the backend (`scenario_*`) and in the view's mock today.
 1. **Hook:** datacenters have a backup for everything; outages happen when someone takes away the last one without knowing it.
 2. **Problem:** everyone sees only their own slice; nobody referees. At scale, failures are constant: Meta's Llama 3 run on 16,384 GPUs hit 419 unexpected interruptions in 54 days.
 3. **Solution, three things (count on fingers):** check every action; figure out what a failure means; send the work to the right place.
-4. **Why trust it:** "We don't predict failures." Deterministic, every answer has a reason. On a simulated 100,000-GPU site, diagnosis plus safe placement takes under 3 ms (DESIGN.md §7.2; re-measure on the demo machine).
+4. **Why trust it:** "We don't predict failures." Deterministic, every answer has a reason. On a simulated 100,000-GPU site, through the real database, diagnosis takes about 6 ms and a 1,000-node safe placement about 30 ms (DESIGN.md §7.2; re-measure on the demo machine with `bash dev.sh scale --live`).
 5. **Demo:** naive scheduler crashes twice on the same cooling loop; Squawk diagnoses, restarts once on locked healthy racks, and refuses the cooling agent's unsafe maintenance. Then the Nemotron fixer clears the routine work around it, writing its own plan into the feed and never acting outside the interlock, and closes the loop on the refused request once the repair is done.
 6. **Close:** "Agents are about to run datacenters. Squawk makes sure they, and we, never use up the same safety margin twice."
 

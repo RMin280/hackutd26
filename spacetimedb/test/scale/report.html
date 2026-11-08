@@ -1,0 +1,271 @@
+<title>Squawk at 100k GPUs</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&family=Roboto+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one control-room column; summary strip, then limits, then the two scaling charts, then the storm.
+   Single dark look on purpose: it matches Squawk's control-room view. */
+:root {
+  color-scheme: dark;
+  --bg: #050505;
+  --panel: #0c0d0f;
+  --line: rgba(255,255,255,0.09);
+  --line-strong: rgba(255,255,255,0.18);
+  --text: #f2f3f5;
+  --muted: #9ba3ae;
+  --azure: #2b9cfc;
+  --ice: #c0d1f1;
+  --gold: #ddb67c;
+  --red: #e5534b;
+  --green: #4cc38a;
+  --sans: 'Roboto', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'Roboto Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: var(--sans); font-weight: 300; line-height: 1.5; }
+.wrap { max-width: 1040px; margin: 0 auto; padding-block: 40px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 40px; }
+h1, h2 { font-weight: 400; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(28px, 5vw, 40px); letter-spacing: -0.01em; }
+h2 { font-size: 20px; }
+p { margin: 0; max-width: 68ch; }
+.eyebrow { font: 500 11px/1 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--azure); }
+.muted { color: var(--muted); }
+.mono, td.num, .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+header { display: grid; gap: 14px; }
+.lede { font-size: 18px; color: var(--ice); }
+.lede b { color: var(--text); font-weight: 500; }
+section { display: grid; gap: 16px; }
+.strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 2px; }
+.strip > div { padding: 16px 18px; display: grid; gap: 4px; border-right: 1px solid var(--line); }
+.strip > div:last-child { border-right: 0; }
+.strip .v { font: 400 26px/1.1 var(--mono); }
+.strip .k { font-size: 12px; color: var(--muted); }
+.strip .hero .v { color: var(--azure); }
+.scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 2px; }
+table { border-collapse: collapse; width: 100%; min-width: 640px; }
+th, td { padding: 11px 14px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: middle; }
+th { font: 500 11px/1.2 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+tr:last-child td { border-bottom: 0; }
+td.num, th.num { text-align: right; white-space: nowrap; }
+td .api { display: block; font: 400 12px var(--mono); color: var(--muted); }
+.meter { width: 120px; height: 6px; background: rgba(255,255,255,0.06); position: relative; }
+.meter i { position: absolute; inset: 0 auto 0 0; background: var(--azure); min-width: 2px; }
+.chip { font: 500 11px/1 var(--mono); padding: 4px 7px; border-radius: 2px; letter-spacing: 0.06em; }
+.chip.pass { color: var(--green); background: rgba(76,195,138,0.12); }
+.chip.fail { color: var(--red); background: rgba(229,83,75,0.14); }
+.charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+figure { margin: 0; display: grid; gap: 10px; min-width: 0; }
+figcaption { font-size: 13px; color: var(--muted); }
+figure h2 { font-size: 16px; }
+svg { width: 100%; height: auto; display: block; }
+svg text { fill: var(--muted); font: 11px var(--mono); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font: 12px var(--mono); color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 14px; height: 2px; display: inline-block; }
+.storm { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+.storm .big { font: 400 clamp(34px, 6vw, 52px)/1 var(--mono); color: var(--gold); }
+.facts { display: grid; gap: 10px; }
+.facts div { display: flex; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--line); padding-bottom: 8px; font-size: 14px; }
+.facts div span:last-child { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+blockquote { margin: 0; padding: 12px 16px; border-left: 2px solid var(--azure); background: var(--panel); font: 13px/1.55 var(--mono); color: var(--ice); }
+.quotes { display: grid; gap: 10px; }
+ul.notes { margin: 0; padding-left: 18px; display: grid; gap: 8px; color: var(--muted); max-width: 72ch; }
+ul.notes b { color: var(--text); font-weight: 400; }
+code { font-family: var(--mono); font-size: 13px; color: var(--ice); background: var(--panel); padding: 2px 6px; border-radius: 2px; }
+footer { font: 12px var(--mono); color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px; }
+#empty { padding: 24px; border: 1px dashed var(--line-strong); }
+@media (max-width: 760px) {
+  .strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .strip > div:nth-child(2) { border-right: 0; }
+  .strip > div:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+  .charts, .storm { grid-template-columns: minmax(0, 1fr); }
+}
+</style>
+
+<div class="wrap" id="app">
+  <div id="empty" hidden>No results yet. Run <code>bash dev.sh scale</code> to measure this machine and fill this page.</div>
+</div>
+
+<script>
+const DATA = /*__SCALE_DATA__*/null;
+
+const COLORS = { floor: 'var(--muted)', diagnose: 'var(--azure)', placement: 'var(--gold)', simulate: 'var(--ice)', lease: 'var(--green)', recompute: '#b48ef0' };
+const fmtMs = (x) => (x < 0.1 ? x.toFixed(3) : x < 10 ? x.toFixed(2) : x.toFixed(1)) + ' ms';
+const int = (x) => Math.round(x).toLocaleString('en-US');
+const k = (g) => (g >= 1000 ? g / 1000 + 'k' : g);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
+function logChart({ series, xs, yLabel, fmt }) {
+  // One log scale on y, linear-by-index on x (site sizes double roughly each step).
+  const W = 480, H = 280, L = 58, R = 16, T = 14, B = 40;
+  const all = series.flatMap((s) => s.ys).filter((v) => v > 0);
+  const lo = Math.pow(10, Math.floor(Math.log10(Math.min(...all))));
+  const hi = Math.pow(10, Math.ceil(Math.log10(Math.max(...all))));
+  const x = (i) => L + (i * (W - L - R)) / (xs.length - 1);
+  const y = (v) => T + (H - T - B) * (1 - (Math.log10(v) - Math.log10(lo)) / (Math.log10(hi) - Math.log10(lo)));
+  let g = '';
+  for (let d = lo; d <= hi * 1.0001; d *= 10) {
+    g += `<line x1="${L}" x2="${W - R}" y1="${y(d)}" y2="${y(d)}" stroke="rgba(255,255,255,0.07)" fill="none"/>`;
+    g += `<text x="${L - 8}" y="${y(d) + 4}" text-anchor="end">${fmt(d)}</text>`;
+  }
+  xs.forEach((v, i) => (g += `<text x="${x(i)}" y="${H - B + 18}" text-anchor="middle">${k(v)}</text>`));
+  g += `<text x="${(L + W - R) / 2}" y="${H - 4}" text-anchor="middle">GPUs in the site</text>`;
+  g += `<text x="12" y="${(T + H - B) / 2}" text-anchor="middle" transform="rotate(-90 12 ${(T + H - B) / 2})">${yLabel}</text>`;
+  for (const s of series) {
+    const pts = s.ys.map((v, i) => `${x(i)},${y(Math.max(v, lo))}`).join(' ');
+    g += `<polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="2" ${s.dash ? 'stroke-dasharray="5 4"' : ''}/>`;
+    s.ys.forEach((v, i) => (g += `<circle cx="${x(i)}" cy="${y(Math.max(v, lo))}" r="${i === s.ys.length - 1 ? 3.5 : 2.5}" fill="${s.color}"/>`));
+  }
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(yLabel)} by site size">${g}</svg>`;
+}
+const legend = (series) => `<div class="legend">${series.map((s) => `<span><i style="background:${s.color};${s.dash ? 'opacity:.7' : ''}"></i>${esc(s.name)}</span>`).join('')}</div>`;
+
+function render(d) {
+  const head = d.sizes.find((s) => s.site.gpus === d.headline);
+  const st = d.storm;
+  const live = d.live;
+  const val = d.validation;
+  const xs = d.sizes.map((s) => s.site.gpus);
+  const op = Object.fromEntries(d.ops.map((o) => [o.key, o]));
+  const lv = (key) => live && live.ops.find((o) => o.key === key);
+  const first = d.sizes[0], last = d.sizes[d.sizes.length - 1];
+  const naiveGrowth = last.naiveSimulate.median / first.naiveSimulate.median;
+  const sizeGrowth = last.site.racks / first.site.racks;
+
+  // The headline is the real path when we have it: diagnose + placement through SpacetimeDB.
+  const realIncident = live ? lv('diagnose').median + lv('placement').median : null;
+  const incident = realIncident ?? st.latency.median;
+  const perSecReal = live ? 1000 / realIncident : null;
+  const perSec = perSecReal ?? st.perSecond;
+  const headroom = (perSec * 86400) / st.metaRatePerDay;
+
+  const latSeries = [
+    ...['diagnose', 'simulate', 'lease', 'recompute', 'placement'].map((key) => ({ name: op[key].api, color: COLORS[key], ys: d.sizes.map((s) => s.latency[key].median) })),
+    { name: 'naive check (full recompute)', color: 'var(--red)', dash: true, ys: d.sizes.map((s) => s.naiveSimulate.median) },
+  ];
+  const readSeries = ['diagnose', 'simulate', 'lease', 'recompute', 'placement'].map((key) => ({ name: op[key].api, color: COLORS[key], ys: d.sizes.map((s) => s.reads[key]) }));
+  const chip = (pass) => `<span class="chip ${pass ? 'pass' : 'fail'}">${pass ? 'PASS' : 'FAIL'}</span>`;
+
+  document.getElementById('app').innerHTML = `
+  <header>
+    <span class="eyebrow">Squawk · scale test · simulated site</span>
+    <h1>Squawk at ${int(d.headline)} GPUs</h1>
+    <p class="lede">A node fails in a 1,000-node job. ${live
+      ? `Through a real SpacetimeDB server, Squawk diagnoses the shared cause in <b>${fmtMs(lv('diagnose').median)}</b> and returns 1,000 safe restart nodes in <b>${fmtMs(lv('placement').median)}</b>, each a committed transaction over HTTP.`
+      : `Squawk finds the shared cause and picks safe restart nodes in <b>${fmtMs(incident)}</b> of core logic.`}
+      Each question reads only the failed part's branch of the map, so the answer stays fast as the site grows.</p>
+  </header>
+
+  <div class="strip">
+    <div class="hero"><span class="v">${fmtMs(incident)}</span><span class="k">${live ? 'diagnose + safe placement through SpacetimeDB, median' : 'fail → diagnose → safe placement, core logic'}</span></div>
+    <div><span class="v">${int(head.site.nodes)}</span><span class="k">nodes · ${int(head.site.racks)} racks · ${int(head.site.parts)} facility parts</span></div>
+    <div><span class="v">${int(head.reads.diagnose)}</span><span class="k">rows read to diagnose one failure</span></div>
+    <div><span class="v">${val ? `${int(val.oracle.incidents)}/${int(val.oracle.incidents)}` : '—'}</span><span class="k">random incidents where the fast answer matches a full brute-force scan</span></div>
+  </div>
+
+  <section>
+    <div><span class="eyebrow">Limits at ${k(d.headline)} GPUs</span></div>
+    <h2>Every operation stays under its limit</h2>
+    <p class="muted">${live
+      ? `<b style="color:var(--text);font-weight:400">Through SpacetimeDB</b> is what an agent sees: an HTTP call to the reducer on ${esc(live.host)}, one transaction, rows committed, answer back. The empty round trip, a reducer that refuses at once, costs ${fmtMs(lv('floor').median)} of that. <b style="color:var(--text);font-weight:400">Core logic</b> is the same code called in-process, without the database.`
+      : 'Core logic only: the same code the reducers run, called in-process. Run <code>bash dev.sh scale --live</code> to add the numbers through SpacetimeDB.'}
+      Median and 95th percentile; the pass mark is the p95 ${live ? 'through SpacetimeDB' : ''} against the limit.</p>
+    <div class="scroll"><table>
+      <thead><tr><th>Operation</th>${live ? '<th class="num">SpacetimeDB median</th><th class="num">SpacetimeDB p95</th>' : ''}<th class="num">Core logic median</th><th class="num">Limit</th><th>p95 share of limit</th><th class="num">Rows read</th><th></th></tr></thead>
+      <tbody>
+      ${d.ops.map((o) => {
+        const c = head.latency[o.key];
+        const l = lv(o.key);
+        const p95 = l ? l.p95 : c.p95;
+        const share = p95 / o.limit;
+        return `<tr><td>${esc(o.label)}<span class="api">${o.api}</span></td>
+          ${live ? `<td class="num">${fmtMs(l.median)}</td><td class="num">${fmtMs(l.p95)}</td>` : ''}
+          <td class="num">${fmtMs(c.median)}</td><td class="num">${o.limit} ms</td>
+          <td><div class="meter" title="${(share * 100).toFixed(1)}% of the limit"><i style="width:${Math.min(100, share * 100)}%"></i></div></td>
+          <td class="num">${int(head.reads[o.key])}</td><td>${chip(p95 <= o.limit)}</td></tr>`;
+      }).join('')}
+      <tr><td>Load the whole site<span class="api">seed_scale_site</span></td>
+        ${live ? `<td class="num">${fmtMs(live.seedMs)}</td><td class="num">—</td>` : ''}
+        <td class="num">${fmtMs(head.build.median)}</td><td class="num">1000 ms</td>
+        <td><div class="meter"><i style="width:${Math.min(100, ((live ? live.seedMs : head.build.p95) / 1000) * 100)}%"></i></div></td>
+        <td class="num">${int(head.site.racks + head.site.nodes + head.site.parts)}</td><td>${chip((live ? live.seedMs : head.build.median) <= 1000)}</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <div><span class="eyebrow">How we know the numbers are right</span></div>
+    <h2>Checked three ways, every run</h2>
+    <div class="facts">
+      ${val ? `<div><span>Correct answers: ${int(val.oracle.incidents)} random incidents at ${k(d.headline)} GPUs (1–3 random parts broken), compared with a slow brute-force version that scans the whole facility and recomputes every rack's backup</span><span>${val.oracle.mismatches === 0 ? 'all agree' : `${val.oracle.mismatches} mismatches`}</span></div>
+      <div><span>Real timing: diagnose timed per call vs. ${int(val.timing.batchCalls)} calls timed as one batch</span><span>${(val.timing.diagnosePerCallMs * 1000).toFixed(1)} µs vs ${(val.timing.diagnoseBatchMs * 1000).toFixed(1)} µs</span></div>
+      <div><span>Real work: diagnosis rows written by those calls</span><span>${int(val.timing.rowsWritten)} of ${int(val.timing.rowsExpected)}</span></div>` : ''}
+      ${live ? `<div><span>Through SpacetimeDB: diagnoses committed, and the cause it named</span><span>${live.checks.diagnosesWritten}/${live.checks.expected} · ${esc(live.checks.cause)}</span></div>
+      <div><span>Through SpacetimeDB: last placement</span><span>${int(live.checks.placementNodes)} nodes, shortfall ${live.checks.placementShortfall}</span></div>` : ''}
+    </div>
+  </section>
+
+  <section>
+    <div><span class="eyebrow">Scaling from ${k(first.site.gpus)} to ${k(last.site.gpus)} GPUs · core logic</span></div>
+    <h2>The site grows ${Math.round(sizeGrowth)}×. The work per question doesn't.</h2>
+    <div class="charts">
+      <figure>
+        <h2>Latency per request</h2>
+        ${logChart({ series: latSeries, xs, yLabel: 'median, ms (log)', fmt: (v) => (v < 1 ? v : int(v)) })}
+        ${legend(latSeries)}
+        <figcaption>A check that recomputes every rack's backup grows ${naiveGrowth.toFixed(0)}× over this range (red, dashed). Squawk's own check reads only the racks below the part, using the precomputed downstream index, and stays flat. These charts show core logic, so the database's fixed cost of a few ms per call is left out.</figcaption>
+      </figure>
+      <figure>
+        <h2>Rows read per request</h2>
+        ${logChart({ series: readSeries, xs, yLabel: 'rows read (log)', fmt: (v) => int(v) })}
+        ${legend(readSeries)}
+        <figcaption>Diagnosis, action checks, leases and state changes touch the same few dozen to few hundred rows at every size. Placement makes one pass over the free spares and the switch branches they sit in, so it grows with the number of spares: ${int(head.reads.placement)} rows at ${k(d.headline)}.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section>
+    <div><span class="eyebrow">Failure storm at ${k(d.headline)} GPUs · core logic</span></div>
+    <h2>${int(st.incidents)} incidents back to back</h2>
+    <div class="storm">
+      <div class="facts">
+        <div><span>Incidents (half with a degraded CDU as shared cause)</span><span>${int(st.incidents)}</span></div>
+        <div><span>Diagnosed as shared cause</span><span>${int(st.sharedCause)}</span></div>
+        <div><span>Restart placed in full</span><span>${int(st.placedInFull)} of ${int(st.incidents)}</span></div>
+        <div><span>Core logic per incident: median · p95 · p99</span><span>${fmtMs(st.latency.median)} · ${fmtMs(st.latency.p95)} · ${fmtMs(st.latency.p99)}</span></div>
+        ${live ? `<div><span>Through SpacetimeDB per incident (diagnose + placement)</span><span>${fmtMs(realIncident)}</span></div>` : ''}
+      </div>
+      <div style="display:grid;gap:10px">
+        <span class="big">${int(perSec)}/s</span>
+        <p class="muted">incidents handled per second, one at a time${live ? ', through SpacetimeDB' : ' (core logic)'}. Meta's Llama 3 run saw 419 interruptions in 54 days on 16,384 GPUs; at that rate a ${k(d.headline)}-GPU site sees about <span class="mono" style="color:var(--text)">${st.metaRatePerDay}</span> a day. That leaves roughly <span class="mono" style="color:var(--text)">${int(headroom)}×</span> headroom.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div><span class="eyebrow">What the answers say</span></div>
+    <h2>Every verdict explains itself, at any size</h2>
+    <div class="quotes">
+      <blockquote>${esc(head.sample.diagnosis.reason)}</blockquote>
+      <blockquote>${esc(head.sample.placement.reason)}</blockquote>
+    </div>
+  </section>
+
+  <section>
+    <div><span class="eyebrow">How this was measured</span></div>
+    <ul class="notes">
+      <li><b>Through SpacetimeDB:</b> the published module on a local SpacetimeDB server, in its own database, called over HTTP from the same machine. A remote server adds the network round trip on top.</li>
+      <li><b>Core logic:</b> <code>spacetimedb/src/core</code>, the same code the reducers run, over in-memory indexes that match the tables' indexes. This isolates how the algorithm scales.</li>
+      <li><b>Simulated sites</b> from <code>scaleSpec()</code>: 8 GPUs per node, 8 nodes per rack, 16 racks per row, two power feeds and two cooling feeds per rack, leaf and spine switches. Deterministic, no random data in the logic.</li>
+      <li><b>Why it scales:</b> power, cooling and network chains are 4 to 7 parts deep. Bigger sites are wider, not deeper, so a question about one part reads one branch.</li>
+      <li><b>The real limit in production</b> is keeping the facility map accurate. Production imports it from DCIM, BMS, NetBox and the scheduler and flags drift.</li>
+      <li><b>Rerun it:</b> <code>bash dev.sh scale --live</code> (needs <code>bash dev.sh server</code>) measures this machine and regenerates this page.</li>
+    </ul>
+  </section>
+
+  <footer>Measured ${esc(new Date(d.generatedAt).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }))} · ${esc(d.machine.cpu)} · ${d.machine.cores} threads · ${d.machine.memGb} GB · Node ${esc(d.machine.node)} · ${d.pass ? 'every limit holds' : 'a limit failed'}</footer>`;
+}
+
+if (DATA) render(DATA);
+else document.getElementById('empty').hidden = false;
+</script>

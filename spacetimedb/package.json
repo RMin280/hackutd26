@@ -7,6 +7,8 @@
   "scripts": {
     "test": "tsx --test test/*.test.ts",
     "test:scale": "tsx --test test/scale/scale.test.ts",
+    "demo:scale": "node --expose-gc --import tsx test/scale/demo.ts",
+    "validate:scale": "tsx test/scale/validate.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

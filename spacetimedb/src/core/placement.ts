@@ -14,6 +14,8 @@ export const EXCLUDE_REASONS = [
 
 export interface PlacementResult {
   nodes: string[];
+  racks: string[]; // distinct racks of the chosen nodes, in order
+
   excluded: Record<(typeof EXCLUDE_REASONS)[number], number>;
   shortfall: number;
   reason: string;
@@ -51,15 +53,36 @@ export function safePlacement(
     }
   }
 
-  // Locality: prefer the leaf, then the spine, of the job's healthy nodes.
-  const leaves = new Set<string>();
-  const spines = new Set<string>();
-  for (const n of s.nodesOwnedBy(job)) {
-    if (excludeSet.has(n.id) || n.state === 'failed') continue;
-    const net = s.rack(n.rack)!.network;
-    leaves.add(net[0]);
-    spines.add(net[1]);
-  }
+  // Locality: prefer the leaf, then the spine, of the job's healthy nodes. Asked from the
+  // candidates' side: does the job have a healthy node below this switch? Once per switch,
+  // walking only that switch's branch and stopping at the first hit, so the cost follows
+  // the spares, not the job's size (every read is a table read in SpacetimeDB).
+  const jobBelow = new Map<string, boolean>();
+  const jobUnder = (sw: string) => {
+    let hit = jobBelow.get(sw);
+    if (hit === undefined) {
+      hit = s.downstreamRacks(sw).some((r) =>
+        s.rack(r)!.nodes.some((id) => {
+          const n = s.node(id);
+          return !!n && n.ownerId === job && n.state !== 'failed' && !excludeSet.has(id);
+        }),
+      );
+      jobBelow.set(sw, hit);
+    }
+    return hit;
+  };
+
+  // Each part read once per call: racks share most of the parts above them.
+  const partOk = new Map<string, boolean>();
+  const working = (p: string) => {
+    let ok = partOk.get(p);
+    if (ok === undefined) {
+      const part = s.part(p);
+      ok = !!part && part.state === 'ok' && part.heldBy === 0n;
+      partOk.set(p, ok);
+    }
+    return ok;
+  };
 
   const rackVerdict = new Map<string, { bad: (typeof EXCLUDE_REASONS)[number] | null; rank: number }>();
   const judgeRack = (rackId: string) => {
@@ -68,10 +91,10 @@ export function safePlacement(
     const rack = s.rack(rackId)!;
     const above = [...rack.powerFeeds.flat(), ...rack.coolingFeeds.flat(), ...rack.network];
     let bad: (typeof EXCLUDE_REASONS)[number] | null = null;
-    if (above.some((p) => s.part(p)?.state !== 'ok' || s.part(p)?.heldBy !== 0n)) bad = 'unhealthy part above it';
+    if (!above.every(working)) bad = 'unhealthy part above it';
     else if ((s.margin(rackId)?.margin ?? -1) < 1) bad = 'rack below full backup';
     else if (above.some((p) => bookedParts.has(p)) || bookedAisles.has(rack.aisle) || bookedRacks.has(rackId)) bad = 'maintenance booked';
-    const rank = leaves.has(rack.network[0]) ? 0 : spines.has(rack.network[1]) ? 1 : 2;
+    const rank = bad ? 2 : jobUnder(rack.network[0]) ? 0 : jobUnder(rack.network[1]) ? 1 : 2;
     const v = { bad, rank };
     rackVerdict.set(rackId, v);
     return v;
@@ -101,6 +124,7 @@ export function safePlacement(
   if (nodes.length < needed) {
     return {
       nodes,
+      racks: [...new Set(chosen.map((e) => e.rack))],
       excluded,
       shortfall: needed - nodes.length,
       reason: `Shortfall: only ${nodes.length} of ${needed} nodes are safe right now. Options: wait for repair, or restart smaller.`,
@@ -111,6 +135,7 @@ export function safePlacement(
   const hours = Math.round(durationMin / 60);
   return {
     nodes,
+    racks,
     excluded,
     shortfall: 0,
     reason: `Restart on ${nodes.length} spare nodes in ${formatRows(chosen.map((e) => e.row))}: separate cooling (${formatList(cdus)}) and power, full backup, no maintenance booked in the next ${hours} h.`,

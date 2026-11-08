@@ -223,17 +223,30 @@ After restart, the scheduler agent requests a **protection lease** on the job's 
 
 ### 7.2 Performance limits (enforced by `spacetimedb/test/scale/scale.test.ts`)
 
-Scale site: `scaleSpec(100000)` in `site.ts` gives 12,544 nodes, 1,568 racks, plus power/cooling/network parts. Measured as the median of 20 runs on a laptop (`npm run test:scale`), core logic over in-memory indexes that match the tables' indexes; SpacetimeDB's own overhead is not included.
+Scale site: `scaleSpec(100000)` in `site.ts` gives 12,544 nodes, 1,568 racks and 636 power/cooling/network parts. Two layers are measured on a laptop (i9-9880H), re-measured 2026-11-08:
 
-| Operation | Limit | Measured |
-| --- | --- | --- |
-| `diagnose_failure` for one node | ≤ 50 ms | 0.03 ms |
-| `safe_placement` for 1,000 nodes | ≤ 100 ms | 2.6 ms |
-| `simulate` (CDU) / `request_lease` (node repair) | ≤ 20 ms | 0.12 ms / 0.06 ms |
-| State change → incremental recompute | ≤ 50 ms | 0.03 ms |
-| Full rebuild from file | ≤ 1 s | 15 ms |
+- **Through SpacetimeDB:** the published module on a local server, each call an HTTP round trip to the reducer with one committed transaction. This is what an agent sees. Measured by `bash dev.sh scale --live`; the scale test suite doesn't run it.
+- **Core logic:** the same code called in-process over in-memory indexes that match the tables' indexes (`npm run test:scale`; the suite fails above the limit). This isolates how the algorithm scales, without the database's fixed cost.
 
-For the pitch: *"On a simulated 100,000-GPU site, diagnosis plus safe restart placement takes under 3 ms."* Re-measure on the demo machine before quoting.
+| Operation (100k GPUs) | Limit | Through SpacetimeDB, median (p95) | Core logic, median |
+| --- | --- | --- | --- |
+| Empty round trip (a reducer that refuses at once) | | 1.9 ms (3.1) | |
+| `diagnose_failure` for one node | ≤ 50 ms | 5.9 ms (7.4) | 0.02 ms |
+| `safe_placement` for 1,000 nodes | ≤ 100 ms | 31 ms (38) | 1.3 ms |
+| `simulate` (CDU) / `request_lease` (node repair) | ≤ 20 ms | 5.9 ms / 5.8 ms (7.6 / 7.7) | 0.09 ms / 0.07 ms |
+| State change → incremental recompute | ≤ 50 ms | 6.2 ms (8.3) | 0.04 ms |
+| Full rebuild (`seed_scale_site`) | ≤ 1 s | 0.3 s | 18 ms |
+
+Inside SpacetimeDB every row read is a table read, so the cost tracks rows read, not facility size. Placement used to read about 30,000 rows: it read every node of the job to learn which switches the job uses. That came to 112 ms through SpacetimeDB, over the limit, although the core logic took 2.6 ms. It now asks, once per candidate switch, whether the job has a healthy node below it, walking only that switch's branch. It also reads each part once per call. That brings it to about 9,500 rows. The answers are identical: 450 random cases matched the old code node for node.
+
+For the pitch: *"On a simulated 100,000-GPU site, through the real database, Squawk diagnoses a failure in about 6 ms and returns 1,000 safe restart nodes in about 30 ms."* Re-measure on the demo machine before quoting.
+
+**How the numbers are validated** (`spacetimedb/test/scale/validate.ts`, also run by the demo):
+- Per-call timing agrees with batch timing over 20,000 calls, and every call's rows were written.
+- 300 random incidents (1–3 random parts broken) are compared with a brute-force version that scans the whole facility and recomputes every rack's backup. The cause, the at-risk nodes and the safety of every chosen node must match.
+- Through SpacetimeDB, the committed diagnosis rows, the named cause and the placement size are read back over SQL.
+
+**Scale demo for the judges:** `bash dev.sh scale --live` (needs `bash dev.sh server`; it publishes to its own database `squawk-scale`, so the demo hall isn't touched). It reports both layers at 100k, then the core logic on 10k–200k-GPU sites: latency, rows read per request, a naive check that recomputes every rack for comparison, and a 500-incident failure storm. It writes `spacetimedb/test/scale/results/scale-report.html` (gitignored) to show on screen. `bash dev.sh scale` alone skips the live layer.
 
 ### 7.3 What actually limits scale (production)
 
