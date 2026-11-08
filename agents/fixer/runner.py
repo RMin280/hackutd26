@@ -28,9 +28,17 @@ class FixerRunner(EventRunner):
         super().__init__(br, actor)
         self.model, self.max_model_calls = model, max_model_calls
         self.waiting: dict[str, Waiting] = {}
+        self.ready: dict[str, Issue] = {}  # unblocked; run once the feed is drained (a replay may show it settled)
 
     def handle(self, event: Event) -> list[Outcome]:
         out: list[Outcome] = []
+        if event.actor == self.actor and event.type in ("approval_requested", "lease_granted"):
+            # We already booked it or sent it to the shift lead: a replayed refusal is settled.
+            for pending in (self.waiting, self.ready):
+                for key, x in list(pending.items()):
+                    issue = x.issue if isinstance(x, Waiting) else x
+                    if issue.kind == "maintenance_refused" and issue.subject == event.subject:
+                        del pending[key]
         for item in triage(event, self.br, self.actor):
             if isinstance(item, Handoff):
                 self.br.escalate(self.actor, item.subject, item.to, item.reason)
@@ -39,12 +47,14 @@ class FixerRunner(EventRunner):
             else:
                 out.append(self._run(item))
         for issue in self._unblocked_by(event):
-            out.append(self._run(issue))
+            self.ready[issue.id] = issue
         return out
 
     def after(self) -> list[Outcome]:
+        out = [self._run(issue) for issue in self.ready.values()]
+        self.ready.clear()
         self._give_up_on_stale_waits()
-        return []
+        return out
 
     def _run(self, issue: Issue) -> Outcome:
         self.record(issue.subject, f"Taking {issue.kind}. {issue.reason}", issue=issue.id, status="started")

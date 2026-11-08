@@ -16,6 +16,9 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
 PartState = Literal["ok", "degraded", "failed", "maintenance"]
+# Software work the update agent books (DESIGN.md §4.4): online patches run alongside jobs;
+# exclusive ones (driver, firmware, reboot) and switch firmware need the nodes to themselves.
+WorkKind = Literal["sw_online", "sw_exclusive", "switch_firmware"]
 Verdict = Literal["allow", "warn", "deny"]
 
 
@@ -117,6 +120,7 @@ class Lease:
     job: str | None = None
     routine: bool = False
     note: str = ""
+    kind: str = ""  # the work kind, when the backend says (software work)
 
 
 @dataclass(frozen=True)
@@ -183,6 +187,9 @@ class Squawk(Protocol):
     def feature(self, feature_id: str) -> FeatureView: ...
     def features(self) -> list[FeatureView]: ...
     def pages_since(self, since: int, channel: str | None = None) -> list[Page]: ...
+    def nodes_in_row(self, row: int) -> list[NodeView]: ...
+    def free_spares(self) -> list[NodeView]: ...  # free, healthy, and not under any work now
+    def simulate_work(self, actor: str, kind: WorkKind, target: str) -> Check: ...
 
     # Actions
     def request_lease(
@@ -194,6 +201,9 @@ class Squawk(Protocol):
         routine: bool = False,
         note: str = "",
         on_behalf_of: str | None = None,
+    ) -> LeaseDecision: ...
+    def request_work(
+        self, actor: str, kind: WorkKind, target: str, *, minutes: int = 0, start_in: int = 0, note: str = ""
     ) -> LeaseDecision: ...
     def release_lease(self, actor: str, lease_id: str, note: str = "") -> Decision: ...
     def dispatch_tech(self, actor: str, target: str, trade: str, note: str) -> Decision: ...

@@ -25,7 +25,7 @@ The first publish asks to log in with spacetimedb.com if the CLI isn't logged in
 
 ### On SpacetimeDB Maincloud
 
-The same backend also runs on Maincloud as `squawk-hackutd26` (Maincloud database names are global). The view and the agents only need its address; nothing else changes.
+The same backend also runs on Maincloud as `hackutd26-2he95` (Maincloud database names are global). The view and the agents only need its address; nothing else changes.
 
 | Command | Does |
 | --- | --- |
@@ -35,7 +35,7 @@ The same backend also runs on Maincloud as `squawk-hackutd26` (Maincloud databas
 | `bash dev.sh cloud lock` / `unlock` | Close / reopen open registration. On the cloud anyone who knows the database name can connect, so lock it once your screens have connected once (each registers itself as shift lead) and the agents are registered with `register_actor` |
 | `bash dev.sh cloud logs` | The module's logs |
 
-Agents: `SPACETIME_HOST=https://maincloud.spacetimedb.com` and `SPACETIME_DB=squawk-hackutd26` in `.env`. Usage and energy: the database's page on spacetimedb.com. Keep the local server (`bash dev.sh server`) as the fallback if the venue network is poor.
+Agents: `SPACETIME_HOST=https://maincloud.spacetimedb.com` and `SPACETIME_DB=hackutd26-2he95` in `.env`. Usage and energy: the database's page on spacetimedb.com. Keep the local server (`bash dev.sh server`) as the fallback if the venue network is poor.
 
 The same thing by hand, from the repo root:
 

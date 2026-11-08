@@ -10,8 +10,10 @@ Two model endpoints, both spoken to over the OpenAI-compatible chat API:
 
 Each endpoint's provider is one of:
   openrouter         OpenRouter (key: OPENROUTER_API_KEY)
-  openai_compatible  a Nemotron NIM or vLLM server (Brev), build.nvidia.com, or any
-                     other OpenAI-compatible server
+  openai_compatible  a Nemotron NIM or vLLM server (Brev), or any other OpenAI-compatible server
+  nvidia             NVIDIA's hosted API (build.nvidia.com), key NVIDIA_API_KEY (starts nvapi-)
+
+Spending on metered endpoints is capped by agents/budget.py (AGENT_BUDGET_USD and friends).
 """
 
 from __future__ import annotations
@@ -22,10 +24,14 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from .budget import Limits, limits_from_env
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ENV_FILE = REPO_ROOT / ".env"
 
-PROVIDERS = ("openrouter", "openai_compatible")
+PROVIDERS = ("openrouter", "openai_compatible", "nvidia")
+NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
+USAGE_FILE = REPO_ROOT / ".agent_usage.json"
 # "NVIDIA: Nemotron 3 Ultra (free)" on OpenRouter.
 DEFAULT_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
@@ -64,6 +70,9 @@ class Settings:
     spacetime_host: str
     spacetime_db: str
     spacetime_token: str
+    spacetime_update_token: str = ""  # the update agent's own identity (agents/patch)
+    budget: Limits = Limits()
+    usage_file: str = ""  # the shared spending ledger; empty = in memory only (tests)
 
 
 def _env(name: str, default: str = "") -> str:
@@ -87,6 +96,9 @@ def _endpoint(role: str, provider: str, base_url: str, api_key: str, model: str)
             _env("OPENROUTER_API_KEY"),
             model or DEFAULT_MODEL,
         )
+    if provider == "nvidia":
+        # NVIDIA's hosted API: the model must match a name https://integrate.api.nvidia.com/v1/models lists.
+        return Endpoint(role, provider, (base_url or NVIDIA_BASE_URL).rstrip("/"), api_key or _env("NVIDIA_API_KEY"), model)
     # openai_compatible: the model must match a name the server lists at /v1/models.
     return Endpoint(role, provider, (base_url or LOCAL_SERVER_URL).rstrip("/"), api_key, model)
 
@@ -132,4 +144,7 @@ def load_settings(env_file: Path | None = ENV_FILE) -> Settings:
         spacetime_host=_env("SPACETIME_HOST", DEFAULT_SPACETIME_HOST).rstrip("/"),
         spacetime_db=_env("SPACETIME_DB"),
         spacetime_token=_env("SPACETIME_TOKEN"),
+        spacetime_update_token=_env("SPACETIME_UPDATE_TOKEN"),
+        budget=limits_from_env(_env),
+        usage_file=_env("AGENT_USAGE_FILE", str(USAGE_FILE)),
     )

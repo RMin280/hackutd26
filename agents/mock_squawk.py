@@ -18,6 +18,7 @@ minutes moved forward by the scenario (advance); nothing reads the wall clock.
 from __future__ import annotations
 
 import itertools
+import re
 from dataclasses import asdict, dataclass, replace
 from typing import Any, NamedTuple
 
@@ -212,7 +213,10 @@ PERMISSIONS: dict[str, set[str]] = {
     "shift_lead": {"maintenance", "approve", "release_any", "dispatch", "notify", "escalate", "record"},
     "dependency_watch": {"record_tests", "dispatch", "notify", "escalate", "record"},
     "facility": {"facility", "record"},
+    "update_agent": {"software", "notify", "escalate", "record"},  # patches only (agents/patch)
 }
+
+SOFTWARE_MINUTES = {"sw_online": 30, "sw_exclusive": 90, "switch_firmware": 60}  # the backend's defaults
 
 DEMO_ACTORS = (
     Actor("fixer-agent", "remediation_agent"),
@@ -221,6 +225,7 @@ DEMO_ACTORS = (
     Actor("scheduler-agent", "scheduler_agent"),
     Actor("shift-lead", "shift_lead"),
     Actor("facility", "facility"),
+    Actor("update-agent", "update_agent"),
 )
 
 
@@ -447,6 +452,76 @@ class MockSquawk:
         entry.update(verdict="allow", reason=check.reason, granted=True, lease=lease.id)
         self._emit("lease_granted", a.name, target, check.reason, lease=lease.id, target=target, verdict="allow", until=lease.end, routine=routine, holder=holder.name, note=note)
         return LeaseDecision(True, "allow", check.reason, lease)
+
+    # Software work (the update agent) --------------------------------------------------
+
+    def nodes_in_row(self, row: int) -> list[NodeView]:
+        self._up()
+        return [self.node(n) for r in self.site.racks.values() if r.row == row for n in r.nodes]
+
+    def free_spares(self) -> list[NodeView]:
+        self._up()
+        busy = {n for x in self.leases.values() if x.type == "maintenance" and self._active(x) for n in (self._software_nodes(x.target or "") or [])}
+        return [self.node(n) for n, o in self.owner.items() if o.kind == "free" and self.node_state[n] == "ok" and n not in busy]
+
+    def simulate_work(self, actor: str, kind: str, target: str) -> Check:
+        entry, a = self._enter(actor, "simulate_work", perm="software", target=self._scoped(target), kind=kind)
+        check = self._check_software(kind, target, self._now, self._now + SOFTWARE_MINUTES.get(kind, 60))
+        entry.update(verdict=check.verdict, reason=check.reason)
+        return check
+
+    def request_work(self, actor: str, kind: str, target: str, *, minutes: int = 0, start_in: int = 0, note: str = "") -> LeaseDecision:
+        """Software work, as the backend's request_work: online patches share nodes with jobs;
+        exclusive work and switch firmware need every node below the target to themselves."""
+        entry, a = self._enter(actor, "request_work", perm="software", target=self._scoped(target), kind=kind, minutes=minutes)
+        start = self._now + max(0, start_in)
+        end = start + (minutes if minutes > 0 else SOFTWARE_MINUTES.get(kind, 60))
+        check = self._check_software(kind, target, start, end)
+        entry.update(verdict=check.verdict, reason=check.reason, granted=check.verdict == "allow")
+        if check.verdict != "allow":
+            self._emit(
+                "lease_denied", a.name, target, check.reason, target=target, kind=kind, verdict=check.verdict, routine=False,
+                minutes=end - start, note=note, earliest_safe=check.earliest_safe, blockers=[asdict(b) for b in check.blockers],
+            )  # fmt: skip
+            return LeaseDecision(False, check.verdict, check.reason, None, check.earliest_safe, check.blockers)
+        lease = Lease(f"lease-{next(self._ids)}", "maintenance", a.name, start, end, target=target, note=note, kind=kind)
+        self.leases[lease.id] = lease
+        self._emit("lease_granted", a.name, target, check.reason, lease=lease.id, target=target, kind=kind, verdict="allow", start=start, until=end, holder=a.name, note=note)
+        return LeaseDecision(True, "allow", check.reason, lease)
+
+    def _software_nodes(self, target: str) -> list[str] | None:
+        if target in self.site.node_rack:
+            return [target]
+        if target in self.site.racks:
+            return list(self.site.racks[target].nodes)
+        m = re.fullmatch(r"(?:row-|sw-leaf-r)(\d+)", target)
+        if m:
+            return [n for r in self.site.racks.values() if r.row == int(m.group(1)) for n in r.nodes]
+        if target in self.jobs:
+            return [n for n, o in self.owner.items() if o == Owner("job", target)]
+        return None
+
+    def _scoped(self, target: str) -> str | None:
+        return target if target in self.site.node_rack or target in self.site.part_type else None
+
+    def _check_software(self, kind: str, target: str, start: int, end: int) -> Check:
+        nodes = self._software_nodes(target)
+        if nodes is None or kind not in SOFTWARE_MINUTES:
+            return Check("deny", f"{kind} on {target} isn't software work Squawk knows.")
+        held = set(nodes)
+        for x in self.leases.values():  # one piece of work per node at a time
+            covers = self._software_nodes(x.target or "") or []
+            if x.type == "maintenance" and x.start < end and start < x.end and held.intersection(covers):
+                return Check("deny", f"{label(target)} overlaps {x.id} ({x.actor}) until {fmt_time(x.end)}.", f"after {fmt_time(x.end)}", (Blocker("lease_ends", x.id, x.end),))
+        if kind == "sw_online":
+            return Check("allow", f"Online update on {label(target)}: runs alongside jobs, no backup lost.")
+        jobs = sorted({self.owner[n].id for n in nodes if self.owner[n].kind == "job" and self.jobs[self.owner[n].id]["status"] == "running"})
+        if jobs:
+            return Check("deny", f"{label(target)} holds nodes of running {', '.join(jobs)}; this update needs them drained.", f"after {jobs[0]} finishes", tuple(Blocker("lease_ends", j) for j in jobs))
+        tenants = sorted({self.owner[n].id for n in nodes if self.owner[n].kind == "tenant" and self.node_state[n] != "failed"})
+        if tenants:
+            return Check("deny", f"{label(target)} holds working nodes of {', '.join(tenants)}; they release them first.", None, tuple(Blocker("lease_ends", t) for t in tenants))
+        return Check("allow", f"{label(target)} runs nothing; the update takes it offline for its window and no rack loses backup.")
 
     def request_approval(self, actor: str, target: str, minutes: int, summary: str, requested_for: str) -> Decision:
         entry, a = self._enter(actor, "request_approval", perm="request_approval", target=target, minutes=minutes, requested_for=requested_for)

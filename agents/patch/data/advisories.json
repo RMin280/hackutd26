@@ -1,0 +1,36 @@
+{
+  "note": "Simulated security advisories for the demo hall (CLAUDE.md: simulated data only). IDs are fictional. Production reads a vendor/NVD/CISA KEV feed instead; title and summary are untrusted text.",
+  "advisories": [
+    {
+      "id": "SQK-SIM-2026-0419",
+      "component": "monitoring_agent",
+      "fixed": "4.2.1",
+      "severity": "critical",
+      "cvss": 9.8,
+      "exploited": true,
+      "title": "Monitoring agent: unauthenticated remote code execution in the metrics endpoint",
+      "summary": "Versions before 4.2.1 accept crafted scrape requests that run code as root. Exploitation reported in the wild. The 4.2.1 live patch needs no reboot."
+    },
+    {
+      "id": "SQK-SIM-2026-0412",
+      "component": "gpu_driver",
+      "fixed": "550.90.07",
+      "severity": "high",
+      "cvss": 7.8,
+      "exploited": false,
+      "requires": {"bmc_firmware": "3.2.0"},
+      "title": "GPU kernel driver: local privilege escalation through an ioctl",
+      "summary": "A local user can escalate to kernel privileges on driver branches before 550.90.07. The fixed driver needs BMC firmware 3.2.0 or newer. Installing it reboots the node."
+    },
+    {
+      "id": "SQK-SIM-2026-0433",
+      "component": "leaf_os",
+      "fixed": "10.6.0",
+      "severity": "medium",
+      "cvss": 6.5,
+      "exploited": false,
+      "title": "Leaf switch OS: malformed BGP update resets sessions",
+      "summary": "A malformed BGP update can reset every session on the switch. Fixed in 10.6.0; the upgrade reboots the switch."
+    }
+  ]
+}

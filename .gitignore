@@ -218,3 +218,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Agents: model spending ledger (agents/budget.py)
+.agent_usage.json
+.agent_usage.json.lock

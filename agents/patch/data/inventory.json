@@ -1,0 +1,10 @@
+{
+  "note": "Simulated software inventory for the demo hall, by row (one version per row and component; a per-node change comes from Squawk's feed once a patch window ends). Production imports this from fleet management (DCIM / Redfish / the scheduler's node facts) and flags drift.",
+  "rows": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+  "components": {
+    "monitoring_agent": {"default": "4.1.9"},
+    "gpu_driver": {"default": "550.90.07", "rows": {"9": "550.54.15", "10": "550.54.15"}},
+    "bmc_firmware": {"default": "3.4.0", "rows": {"9": "3.1.2", "10": "3.1.2"}},
+    "leaf_os": {"default": "10.4.2"}
+  }
+}

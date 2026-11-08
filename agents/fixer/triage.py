@@ -39,6 +39,8 @@ def _node_change(event: Event, br: Squawk, fixer: str) -> list[Triaged]:
     state = event.data.get("state")
 
     if state in ("failed", "degraded"):
+        if any(lease.actor == fixer for lease in br.leases_on(node.id)):
+            return []  # already out of service under our lease (e.g. replaying the feed after a restart)
         if node.owner.kind == "job":
             return [Handoff(node.id, "scheduler agent", f"Not low: {node.id} runs {node.owner.id}, so the scheduler agent's diagnose, place and protect flow handles it.")]
         if node.owner.kind == "tenant" and state == "degraded":
