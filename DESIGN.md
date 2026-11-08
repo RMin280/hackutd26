@@ -313,7 +313,7 @@ The agents code against `agents/squawk.py` (`Squawk`). `MockSquawk` implements i
 | Tenant node maintenance → `warn` | tenant holds its nodes → `deny` (§4.4) | align on `warn` |
 | *(dependency agent)* `feature()`, `features()`, `pages_since()`, `record_test()`, `resend_page()`, role `dependency_watch` | nothing | deferred with the agent (§8.3) |
 
-Nothing here touches the minimum demo. Build order: (1) `decision` columns + `record_event` + the role, (2) `routine` / `note` / `on_behalf_of` / `finished` / `request_approval`, (3) the HTTP adapter and `check_setup` against the live database, (4) the demo steps in §10.2.
+Nothing here touches the minimum demo. **Status (2026-11-07, late):** rows 1–3 of the build order are in the module on `integration` (`spacetimedb/test/agents.test.ts`): `decision.type/subject/data` on every row, `record_event`, the `remediation_agent` role (`node_repair` itself, `facility_work` only on a requester's behalf), `routine`/`note`/`on_behalf_of` on `request_work`, `finish_job`, `release_work(id, note)` with the stale-lock rule. `request_approval` is not a separate reducer: the adapter sends `request_work(..., on_behalf_of=requested_for)` and a `warn` verdict waits in `needs_approval` (feed type `approval_requested`). The tenant-node rule stays `deny` for a *working* tenant node; the fixer only touches failed ones, so nothing changes for it. Remaining: the HTTP adapter and `check_setup` against the live database, then the demo steps in §10.2.
 
 ## 9. Security (Iteration 1 baseline)
 

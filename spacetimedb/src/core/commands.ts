@@ -24,11 +24,15 @@ import { buildSite, scaleSpec } from './site';
 import type { Store } from './store';
 import { clock, duration, fmtInt, formatList, formatRows, label, plural } from './text';
 import {
+  AGENT_EVENT_TYPES,
   HEALTH,
   ROLES,
   RequestError,
   type ActorRow,
+  type AgentEventType,
   type DecisionRow,
+  type EventType,
+  type FeedVerdict,
   type MarginRow,
   type PartType,
   type Role,
@@ -55,7 +59,10 @@ const ACTION_TEXT: Record<Action, string> = {
   diagnose: 'diagnose failures',
   placement: 'ask for a placement',
   restart: 'restart jobs',
+  finish: 'finish jobs',
   protect: 'request protection leases',
+  book_for_others: 'book work for other actors',
+  record: 'write events to the decision feed',
   clock: 'move the simulated clock',
   present: 'run the demo scenario or reseed the hall',
   admin: 'do admin actions',
@@ -71,11 +78,36 @@ function who(a: ActorRow) {
   return { actor: a.name, actorKind: ACTOR_KIND[a.role as Role] ?? 'facility', actorRole: a.role };
 }
 
-type Decision = Omit<DecisionRow, 'seq' | 'atMin' | 'focusIds' | 'focusParts' | 'work'> &
-  Partial<Pick<DecisionRow, 'focusIds' | 'focusParts' | 'work'>>;
+/** A decision-feed row before it gets its seq and time. `type` says what happened (DESIGN.md §4.3);
+ *  `subject` what it is about; `data` the typed fields agents read, stored as JSON. */
+type Decision = Omit<DecisionRow, 'seq' | 'atMin' | 'focusIds' | 'focusParts' | 'work' | 'type' | 'subject' | 'data'> &
+  Partial<Pick<DecisionRow, 'focusIds' | 'focusParts' | 'work' | 'subject'>> & {
+    type: EventType;
+    data?: Record<string, unknown>; // no bigints: ids go in as strings
+  };
 
 function decide(s: Store, d: Decision): void {
-  s.insertDecision({ focusIds: [], focusParts: [], work: 0n, ...d, atMin: s.now() });
+  const { data, ...row } = d;
+  s.insertDecision({ focusIds: [], focusParts: [], work: 0n, subject: '', ...row, data: JSON.stringify(data ?? {}), atMin: s.now() });
+}
+
+/** The lease fields agents read from a lease_* event. */
+function leaseData(w: WorkRow): Record<string, unknown> {
+  return {
+    lease: String(w.id),
+    lease_type: w.kind === 'protection' ? 'protection' : 'maintenance',
+    kind: w.kind,
+    target: w.target,
+    target_kind: w.targetKind,
+    job: w.job,
+    racks: w.racks.length,
+    holder: w.actor,
+    booked_by: w.bookedBy,
+    start: w.startMin,
+    until: w.endMin,
+    routine: w.routine,
+    note: w.note,
+  };
 }
 
 function audit(s: Store, a: { identity: string; name: string }, action: string, target: string, verdict: string, reason: string) {
@@ -115,10 +147,12 @@ export function seedScaleSite(s: Store, identity: string, gpus: number): void {
   seed(s, site);
   decide(s, {
     ...SQUAWK,
+    type: 'seed',
     title: `Scale site: ${fmtInt(gpus)} GPUs`,
     verdict: 'info',
     reason: `${fmtInt(site.racks.length)} racks, ${fmtInt(site.nodes.length)} nodes, ${fmtInt(site.parts.length)} facility parts.`,
     focusKind: 'overview',
+    data: { racks: site.racks.length, nodes: site.nodes.length, parts: site.parts.length },
   });
   audit(s, a, 'seed_scale_site', String(gpus), 'ok', `${site.nodes.length} nodes`);
 }
@@ -257,12 +291,25 @@ export interface WorkArgs {
   durationMin: number; // 0 = the kind's default
   dryRun: boolean; // simulate only
   ticket: string;
+  routine?: boolean; // routine work: a refusal may be queued and rebooked by the fixer once its blockers clear
+  note?: string; // free text; stored as data, never part of the check
+  onBehalfOf?: string; // requester's actor name: the caller needs book_for_others, and the check runs as the requester
 }
 
 const VERDICT_WORD = { allow: 'allowed', warn: 'needs approval', deny: 'denied' } as const;
 
 export function requestWork(s: Store, identity: string, args: WorkArgs): WorkRow {
-  const a = requireActor(s, identity);
+  const caller = requireActor(s, identity);
+  // Booking for someone else: the requester owns the lease and the check runs as them.
+  const forName = (args.onBehalfOf ?? '').trim();
+  let a = caller;
+  if (forName && forName !== caller.name) {
+    requireRole(caller, 'book_for_others');
+    const requester = s.actorByName(forName);
+    if (!requester) throw new RequestError(`No actor named "${forName}" to book for.`);
+    a = requester;
+  }
+  const booked = a.identity !== caller.identity;
   if (!isWorkKind(args.kind)) throw new RequestError(`Unknown work kind "${args.kind}". Use one of: ${WORK_KINDS.join(', ')}.`);
   const kind: WorkKind = args.kind;
   if (!CAN_REQUEST[a.role as Role]?.includes(kind)) {
@@ -333,6 +380,9 @@ export function requestWork(s: Store, identity: string, args: WorkArgs): WorkRow
     offlineNodes: fp.offlineNodes,
     nodeCount: fp.nodes.length || fp.offlineNodes.length,
     approvedBy: '',
+    routine: args.routine ?? false,
+    note: cleanText(args.note ?? ''),
+    bookedBy: booked ? caller.name : '',
   });
   if (status === 'granted' || status === 'active') {
     insertClaims(s, w, fp);
@@ -340,18 +390,32 @@ export function requestWork(s: Store, identity: string, args: WorkArgs): WorkRow
   }
 
   const when = start > now ? ` from ${clock(start)}` : '';
+  const forWhom = booked ? ` for ${a.name}` : '';
   const title = args.dryRun
-    ? `Simulated: ${spec.title.toLowerCase()} on ${fp.targetLabel} would be ${VERDICT_WORD[verdict]}`
-    : `${spec.title} on ${fp.targetLabel}${when} ${VERDICT_WORD[verdict]}`;
+    ? `Simulated: ${spec.title.toLowerCase()} on ${fp.targetLabel}${forWhom} would be ${VERDICT_WORD[verdict]}`
+    : `${spec.title} on ${fp.targetLabel}${when}${forWhom} ${VERDICT_WORD[verdict]}`;
+  const type: EventType = args.dryRun ? 'simulated' : verdict === 'allow' ? 'lease_granted' : verdict === 'warn' ? 'approval_requested' : 'lease_denied';
   decide(s, {
-    ...who(a),
+    ...who(caller),
+    type,
+    subject: fp.target,
     title,
     verdict,
     reason: `${reason}${earliest.text ? ` Earliest safe time: ${earliest.text}.` : ''}`,
     ...focusFor(fp),
     work: w.id,
+    data: {
+      ...leaseData(w),
+      verdict,
+      status,
+      minutes: end - start,
+      earliest_safe: earliest.text,
+      earliest_safe_min: earliest.min,
+      blockers: ev ? ev.blockers.map((b) => ({ ref: b.ref, text: b.text, end: b.end })) : [],
+      requested_for: booked ? a.name : '',
+    },
   });
-  audit(s, a, args.dryRun ? `simulate:${kind}` : `request:${kind}`, fp.target, verdict, reason);
+  audit(s, caller, `${args.dryRun ? 'simulate' : 'request'}:${kind}${booked ? ` for ${a.name}` : ''}`, fp.target, verdict, reason);
   return w;
 }
 
@@ -403,11 +467,21 @@ export function approveWork(s: Store, identity: string, id: bigint): WorkRow {
   }
   decide(s, {
     ...who(a),
+    type: denied ? 'lease_denied' : 'lease_granted',
+    subject: outcome.target,
     title: `${CATALOG[kind].title} on ${outcome.targetLabel} ${denied ? 'denied at approval' : `approved by ${a.name}`}`,
     verdict: denied ? 'deny' : 'allow',
     reason: `${outcome.reason}${denied && outcome.earliestSafe ? ` Earliest safe time: ${outcome.earliestSafe}.` : ''}`,
     ...focusFor(fp),
     work: outcome.id,
+    data: {
+      ...leaseData(outcome),
+      verdict: outcome.verdict,
+      status: outcome.status,
+      approved_by: outcome.approvedBy,
+      earliest_safe: outcome.earliestSafe,
+      blockers: denied ? ev.blockers.map((b) => ({ ref: b.ref, text: b.text, end: b.end })) : [],
+    },
   });
   audit(s, a, 'approve', `#${id}`, outcome.status, outcome.reason);
   return outcome;
@@ -424,35 +498,53 @@ export function rejectWork(s: Store, identity: string, id: bigint, note: string)
   s.putWork(w);
   decide(s, {
     ...who(a),
+    type: 'lease_denied',
+    subject: w.target,
     title: `${describeWork(w)} rejected`,
     verdict: 'deny',
     reason: w.reason,
     focusKind: 'overview',
     work: w.id,
+    data: { ...leaseData(w), verdict: 'rejected', status: w.status, rejected_by: a.name, earliest_safe: '', blockers: [] },
   });
   audit(s, a, 'reject', `#${id}`, 'rejected', n);
 }
 
-export function releaseWork(s: Store, identity: string, id: bigint): void {
+/** Release a lease early. The requester, a shift lead, or the fixer for a protection
+ *  lock whose job has finished (DESIGN.md §8.2: stale protection). */
+export function releaseWork(s: Store, identity: string, id: bigint, note = ''): void {
   const a = requireActor(s, identity);
   const w = s.work(id);
   if (!w) throw new RequestError(`No work #${id}.`);
   const mine = w.actorIdentity === a.identity;
-  if (!mine && !CAN_DO.approve.includes(a.role as Role)) throw new RequestError(`Only ${w.actor} or a shift lead can release #${id}.`);
+  const lead = CAN_DO.approve.includes(a.role as Role);
+  const stale = a.role === 'remediation_agent' && w.kind === 'protection' && s.job(w.job)?.status === 'finished';
+  if (!mine && !lead && !stale) {
+    throw new RequestError(
+      w.kind === 'protection'
+        ? `Only ${w.actor} or a shift lead can release #${id} while ${w.job} has not finished.`
+        : `Only ${w.actor} or a shift lead can release #${id}.`,
+    );
+  }
   let ended: 'done' | 'cancelled';
   if (w.status === 'active') ended = 'done';
   else if (w.status === 'granted' || w.status === 'needs_approval') ended = 'cancelled';
   else throw new RequestError(`#${id} is ${w.status}; nothing to release.`);
   finish(s, w, ended, ended === 'done' ? s.now() : undefined);
+  const n = cleanText(note);
+  const why = w.kind === 'protection' ? `${w.job}'s racks are open for maintenance again.` : `Its claims are released.`;
   decide(s, {
     ...who(a),
-    title: `${describeWork(w)} ${ended === 'done' ? 'finished' : 'cancelled'}`,
+    type: 'lease_released',
+    subject: w.kind === 'protection' ? w.job : w.target,
+    title: `${describeWork(w)} ${ended === 'done' ? 'finished' : 'cancelled'}${stale ? ' (stale lock)' : ''}`,
     verdict: 'info',
-    reason: w.kind === 'protection' ? `${w.job}'s racks are open for maintenance again.` : `Its claims are released.`,
+    reason: `${why}${n ? ` ${n}` : ''}`,
     focusKind: 'overview',
     work: w.id,
+    data: { ...leaseData(w), ended, released_by: a.name, note: n },
   });
-  audit(s, a, 'release', `#${id}`, ended, '');
+  audit(s, a, 'release', `#${id}`, ended, n);
 }
 
 /** Move simulated time forward; leases start and end on the way (they auto-expire). */
@@ -474,11 +566,14 @@ export function advanceTo(s: Store, now: number): void {
     finish(s, w, 'done');
     decide(s, {
       ...SQUAWK,
+      type: 'lease_expired',
+      subject: w.kind === 'protection' ? w.job : w.target,
       title: w.kind === 'protection' ? `Protection for ${w.job} ended` : `${describeWork(w)} finished`,
       verdict: 'info',
       reason: w.kind === 'protection' ? `Its ${plural(w.racks.length, 'rack')} are open for maintenance again.` : 'Window ended; its claims are released.',
       focusKind: 'overview',
       work: w.id,
+      data: leaseData(w),
     });
   }
   for (const w of s.workByStatus('granted')) {
@@ -490,12 +585,15 @@ export function advanceTo(s: Store, now: number): void {
     activate(s, w);
     decide(s, {
       ...SQUAWK,
+      type: 'lease_started',
+      subject: w.target,
       title: `${describeWork(w)} started`,
       verdict: 'info',
       reason: `Runs until ${clock(w.endMin)}.`,
       focusKind: w.targetKind === 'part' || w.targetKind === 'node' || w.targetKind === 'rack' ? w.targetKind : 'racks',
       focusIds: w.targetKind === 'part' || w.targetKind === 'node' || w.targetKind === 'rack' ? [w.target] : w.racks,
       work: w.id,
+      data: leaseData(w),
     });
   }
   for (const w of s.workByStatus('needs_approval')) {
@@ -535,11 +633,14 @@ export function setPartState(s: Store, identity: string, partId: string, state: 
   }
   decide(s, {
     ...who(a),
+    type: 'state_change',
+    subject: partId,
     title: `${P} ${state === 'ok' ? 'repaired' : state}`,
     verdict: state === 'ok' ? 'info' : yellow.length || red.length ? 'warn' : 'info',
     reason,
     focusKind: 'part',
     focusIds: [partId],
+    data: { kind: 'part', part_type: part.type, state, previous: part.state, yellow: yellow.length, red: red.length, note: '' },
   });
   audit(s, a, 'set_part_state', partId, state, reason);
 }
@@ -560,18 +661,31 @@ export function reportNodeFailure(s: Store, identity: string, nodeId: string, te
   const job = node.ownerKind === 'job' ? s.job(node.ownerId) : undefined;
   let title = `${nodeId} failed`;
   let reason = node.ownerKind === 'free' ? `${nodeId} was a free spare; no job is affected.` : `${nodeId} belongs to ${node.ownerId}.`;
+  let stopped = false;
   if (job && job.status === 'running') {
     s.putJob({ ...job, status: 'stopped', crashes: job.crashes + 1 });
+    stopped = true;
     title = `${nodeId} failed, ${job.id} stopped`;
     reason = `One node down stops all ${fmtInt(job.nodes)} nodes of a synchronous training job.`;
   }
   decide(s, {
     ...who(a),
+    type: 'state_change',
+    subject: nodeId,
     title: text.title ?? title,
     verdict: text.verdict ?? 'failure',
     reason: text.reason ?? reason,
     focusKind: 'node',
     focusIds: [nodeId],
+    data: {
+      kind: 'node',
+      state: 'failed',
+      previous: node.state,
+      owner_kind: node.ownerKind,
+      owner_id: node.ownerId,
+      job_status: stopped ? 'stopped' : '',
+      note: '',
+    },
   });
   audit(s, a, 'report_node_failure', nodeId, 'failed', reason);
 }
@@ -585,11 +699,14 @@ export function setNodeState(s: Store, identity: string, nodeId: string, state: 
   s.putNode({ ...node, state });
   decide(s, {
     ...who(a),
+    type: 'state_change',
+    subject: nodeId,
     title: `${nodeId} ${state === 'ok' ? 'back in service' : state}`,
     verdict: state === 'failed' ? 'failure' : 'info',
     reason: `Marked ${state} by ${a.name}.`,
     focusKind: 'node',
     focusIds: [nodeId],
+    data: { kind: 'node', state, previous: node.state, owner_kind: node.ownerKind, owner_id: node.ownerId, job_status: '', note: '' },
   });
   audit(s, a, 'set_node_state', nodeId, state, '');
 }
@@ -605,11 +722,14 @@ export function diagnoseFailure(s: Store, identity: string, nodes: string[]): bi
   const row = s.insertDiagnosis({ atMin: s.now(), nodes, ...d });
   decide(s, {
     ...SQUAWK,
+    type: 'diagnosis',
+    subject: nodes[0],
     title: `Diagnosis: ${d.classification === 'shared_cause' ? `shared cause ${label(d.cause)}` : 'isolated'}`,
     verdict: d.classification,
     reason: `${d.reason} Send a ${d.send}.`,
     focusKind: d.cause ? 'part' : 'node',
     focusIds: [d.cause || nodes[0]],
+    data: { diagnosis: String(row.id), nodes, classification: d.classification, cause: d.cause, at_risk: d.atRisk.length, send: d.send, by: a.name },
   });
   audit(s, a, 'diagnose_failure', nodes.join(','), d.classification, d.reason);
   return row.id;
@@ -653,11 +773,14 @@ export function requestPlacement(s: Store, identity: string, args: PlacementArgs
   });
   decide(s, {
     ...SQUAWK,
+    type: 'placement',
+    subject: args.job,
     title: p.shortfall ? `Safe placement: shortfall of ${p.shortfall}` : `Safe placement: ${p.nodes.length} nodes`,
     verdict: 'placement',
     reason: p.reason,
     focusKind: 'racks',
     focusIds: [...new Set(p.nodes.map((n) => s.node(n)!.rack))],
+    data: { placement: String(row.id), job: args.job, nodes: p.nodes.length, needed, shortfall: p.shortfall, by: a.name },
   });
   audit(s, a, 'safe_placement', args.job, p.shortfall ? 'shortfall' : 'ok', p.reason);
   return row.id;
@@ -692,13 +815,45 @@ export function restartJob(s: Store, identity: string, jobId: string, placementI
   s.putPlacement({ ...p, used: true });
   decide(s, {
     ...who(a),
+    type: 'job_status',
+    subject: jobId,
     title: `Restarted ${jobId} on ${p.nodes.length} new nodes`,
     verdict: 'info',
     reason: `Left ${plural(left, 'failed or at-risk node')}; ${jobId} runs on ${fmtInt(total)} nodes again.`,
     focusKind: 'racks',
     focusIds: [...new Set(p.nodes.map((n) => s.node(n)!.rack))],
+    data: { status: 'running', previous: job.status, nodes: total, placement: String(placementId) },
   });
   audit(s, a, 'restart_job', jobId, 'ok', `placement #${placementId}`);
+}
+
+/** The scheduler says the job is done: its nodes go back to the pool. Any protection lease it
+ *  held stays until it ends or someone releases it (the fixer cleans up a stale one, DESIGN.md §8.2). */
+export function finishJob(s: Store, identity: string, jobId: string): void {
+  const a = requireActor(s, identity);
+  requireRole(a, 'finish');
+  const job = s.job(jobId);
+  if (!job) throw new RequestError(`Unknown job "${jobId}".`);
+  if (job.status === 'finished') throw new RequestError(`${jobId} has already finished.`);
+  const held = s.nodesOwnedBy(jobId);
+  for (const n of held) s.putNode({ ...n, ownerKind: 'free', ownerId: '' });
+  s.putJob({ ...job, status: 'finished', nodes: 0 });
+  const locks = s.workByStatus('active').filter((w) => w.kind === 'protection' && w.job === jobId);
+  const lock = locks.sort((x, y) => y.endMin - x.endMin)[0];
+  const reason = `${jobId} finished; its ${plural(held.length, 'node')} are free spares again.${
+    lock ? ` Protection #${lock.id} still locks ${plural(lock.racks.length, 'rack')} until ${clock(lock.endMin)}.` : ''
+  }`;
+  decide(s, {
+    ...who(a),
+    type: 'job_status',
+    subject: jobId,
+    title: `${jobId} finished`,
+    verdict: 'info',
+    reason,
+    focusKind: 'overview',
+    data: { status: 'finished', previous: job.status, nodes_released: held.length, protection: lock ? String(lock.id) : '' },
+  });
+  audit(s, a, 'finish_job', jobId, 'finished', reason);
 }
 
 /** What a scheduler does without Squawk: swap the failed node for the nearest free
@@ -730,11 +885,14 @@ export function naiveRestart(
   s.putJob({ ...job, status: 'running', restarts: job.restarts + 1, nodes: total });
   decide(s, {
     ...who(a),
+    type: 'job_status',
+    subject: jobId,
     title: text.title ?? `Swapped ${failedNode} for ${pick.id}, restarted`,
     verdict: text.verdict ?? 'info',
     reason: text.reason ?? 'Nearest free node. Cause not checked.',
     focusKind: text.focusIds ? 'racks' : 'node',
     focusIds: text.focusIds ?? [pick.id],
+    data: { status: 'running', previous: job.status, nodes: total, swapped: failedNode, picked: pick.id },
   });
   audit(s, a, 'naive_restart', jobId, 'ok', `${failedNode} -> ${pick.id}`);
   return pick.id;
@@ -792,10 +950,109 @@ export function requestProtection(s: Store, identity: string, jobId: string, dur
     offlineNodes: [],
     nodeCount: 0,
     approvedBy: '',
+    routine: false,
+    note: '',
+    bookedBy: '',
   });
   insertClaims(s, w, fp);
   activate(s, w);
-  decide(s, { ...who(a), title: `Protection lease for ${jobId} granted`, verdict: 'allow', reason, focusKind: 'overview', work: w.id });
+  decide(s, {
+    ...who(a),
+    type: 'lease_granted',
+    subject: jobId,
+    title: `Protection lease for ${jobId} granted`,
+    verdict: 'allow',
+    reason,
+    focusKind: 'overview',
+    work: w.id,
+    data: { ...leaseData(w), verdict: 'allow', status: w.status },
+  });
   audit(s, a, 'request_protection', jobId, 'allow', reason);
   return w;
+}
+
+// ---------------------------------------------------------------- agent events (DESIGN.md §4.3, §8.2)
+
+const asText = (v: unknown, max = 80): string => (typeof v === 'string' ? cleanText(v, max) : '');
+
+/** An agent writes its own row to the decision feed: its plan, a step, a dispatch, a hand-off.
+ *  The row is attributed to the caller's identity and audited like everything else; `data` is
+ *  untrusted JSON kept as data. The title and verdict are derived here so the view stays dumb. */
+export function recordEvent(s: Store, identity: string, type: string, subject: string, reason: string, data: string): void {
+  const a = requireActor(s, identity);
+  requireRole(a, 'record');
+  if (!(AGENT_EVENT_TYPES as readonly string[]).includes(type)) {
+    throw new RequestError(`Unknown event type "${type}". Use one of: ${AGENT_EVENT_TYPES.join(', ')}.`);
+  }
+  const t = type as AgentEventType;
+  if (data.length > 4000) throw new RequestError('data must be at most 4,000 characters of JSON.');
+  let d: Record<string, unknown>;
+  try {
+    const parsed: unknown = data.trim() ? JSON.parse(data) : {};
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('not an object');
+    d = parsed as Record<string, unknown>;
+  } catch {
+    throw new RequestError('data must be a JSON object.');
+  }
+  const subj = cleanText(subject, 80);
+  const name = s.part(subj) ? label(subj) : subj || 'the hall';
+
+  let title: string;
+  let verdict: FeedVerdict;
+  switch (t) {
+    case 'agent_plan': {
+      const steps = Array.isArray(d.steps) ? (d.steps as unknown[]).slice(0, 8).map((x) => asText((x as { tool?: unknown })?.tool, 40)).filter(Boolean) : [];
+      title = steps.length ? `Plan for ${name}: ${steps.join(' → ')}` : `Plan for ${name}`;
+      verdict = 'plan';
+      break;
+    }
+    case 'agent_step':
+      title = asText(reason, 100) || `Step on ${name}`;
+      verdict = 'info';
+      break;
+    case 'agent': {
+      const status = asText(d.status, 20);
+      title =
+        status === 'fixed'
+          ? `Fixed ${name}`
+          : status === 'handed_off'
+            ? `Handed off ${name}`
+            : status === 'failed_closed'
+              ? `Stopped on ${name}: failed closed`
+              : status === 'waiting'
+                ? `Waiting on ${name}`
+                : `Working on ${name}`;
+      verdict = status === 'fixed' ? 'fixed' : status === 'handed_off' ? 'handoff' : status === 'failed_closed' ? 'warn' : 'info';
+      break;
+    }
+    case 'tech_dispatched': {
+      const trade = asText(d.trade, 40) || 'tech';
+      title = `${trade[0].toUpperCase()}${trade.slice(1)} sent to ${name}`;
+      verdict = 'info';
+      break;
+    }
+    case 'notified':
+      title = `Told ${asText(d.to, 40) || 'someone'} about ${name}`;
+      verdict = 'info';
+      break;
+    case 'escalated':
+      title = `Handed ${name} to ${asText(d.to, 40) || 'a person'}`;
+      verdict = 'handoff';
+      break;
+  }
+
+  // Focus: where the camera goes when the row is clicked.
+  let focus: Pick<DecisionRow, 'focusKind' | 'focusIds'> = { focusKind: 'overview', focusIds: [] };
+  const work = /^#?(\d+)$/.exec(subj);
+  if (s.node(subj)) focus = { focusKind: 'node', focusIds: [subj] };
+  else if (s.part(subj)) focus = { focusKind: 'part', focusIds: [subj] };
+  else if (s.rack(subj)) focus = { focusKind: 'rack', focusIds: [subj] };
+  else if (s.job(subj)) focus = { focusKind: 'racks', focusIds: [...new Set(s.nodesOwnedBy(subj).map((n) => n.rack))] };
+  else if (work) {
+    const w = s.work(BigInt(work[1]));
+    if (w) focus = w.kind === 'protection' ? { focusKind: 'racks', focusIds: w.racks } : { focusKind: w.targetKind === 'part' || w.targetKind === 'node' || w.targetKind === 'rack' ? w.targetKind : 'racks', focusIds: w.targetKind === 'part' || w.targetKind === 'node' || w.targetKind === 'rack' ? [w.target] : w.racks };
+  }
+
+  decide(s, { ...who(a), type: t, subject: subj, title: cleanText(title, 120), verdict, reason: cleanText(reason, 300), ...focus, data: d });
+  audit(s, a, `record:${t}`, subj, verdict, cleanText(reason, 300));
 }

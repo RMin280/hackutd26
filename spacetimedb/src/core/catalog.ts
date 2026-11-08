@@ -4,7 +4,7 @@
 //   Hardware: a node, a rack, a whole hot aisle, or a facility part (and everything below it).
 //   Software: "online" runs alongside HPC jobs; "drain-required" needs the nodes to itself.
 
-import type { PartType, Role } from './types';
+import type { ActorKind, PartType, Role } from './types';
 
 export type WorkKind =
   | 'node_repair'
@@ -185,6 +185,9 @@ export const CAN_REQUEST: Record<Role, WorkKind[]> = {
   technician: WORK_KINDS,
   scheduler_agent: ['sw_online', 'sw_exclusive'],
   cooling_agent: ['facility_work'],
+  // The fixer repairs single nodes itself; anything else it books on a requester's behalf,
+  // and that check runs as the requester (book_for_others).
+  remediation_agent: ['node_repair'],
   facility: [],
   viewer: [],
 };
@@ -201,7 +204,10 @@ export type Action =
   | 'diagnose'
   | 'placement'
   | 'restart'
+  | 'finish' // mark a job finished
   | 'protect'
+  | 'book_for_others' // request work on behalf of another actor
+  | 'record' // write an agent event to the decision feed
   | 'clock'
   | 'present'
   | 'admin';
@@ -210,22 +216,26 @@ export const CAN_DO: Record<Action, Role[]> = {
   approve: ['shift_lead', 'admin'],
   set_state: ['facility', 'shift_lead', 'admin'],
   report_failure: ['scheduler_agent', 'facility', 'shift_lead', 'admin'],
-  diagnose: ['scheduler_agent', 'technician', 'shift_lead', 'admin'],
+  diagnose: ['scheduler_agent', 'remediation_agent', 'technician', 'shift_lead', 'admin'],
   placement: ['scheduler_agent', 'shift_lead', 'admin'],
   restart: ['scheduler_agent', 'shift_lead', 'admin'],
+  finish: ['scheduler_agent', 'shift_lead', 'admin'],
   protect: ['scheduler_agent', 'shift_lead', 'admin'],
+  book_for_others: ['remediation_agent', 'shift_lead', 'admin'],
+  record: ['remediation_agent', 'scheduler_agent', 'cooling_agent', 'shift_lead', 'admin'],
   clock: ['shift_lead', 'admin'],
   present: ['shift_lead', 'admin'],
   admin: ['admin'],
 };
 
-/** Decision-feed icon for each role (frontend ActorKind has four kinds). */
-export const ACTOR_KIND: Record<Role, 'facility' | 'scheduler' | 'cooling' | 'squawk'> = {
+/** Decision-feed icon for each role (frontend ActorKind). */
+export const ACTOR_KIND: Record<Role, ActorKind> = {
   admin: 'facility',
   shift_lead: 'facility',
   technician: 'facility',
   scheduler_agent: 'scheduler',
   cooling_agent: 'cooling',
+  remediation_agent: 'fixer',
   facility: 'facility',
   viewer: 'facility',
 };

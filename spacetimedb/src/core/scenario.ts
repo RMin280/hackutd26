@@ -218,6 +218,8 @@ const squawk: Step[] = [
         durationMin: 0,
         dryRun: false,
         ticket: 'scenario-cdu4',
+        routine: true, // routine service: a refusal is something the fixer may queue and rebook (DESIGN.md §8.2)
+        note: 'Quarterly service',
       });
       // The racks CDU-4 is the last cooling feed for: they would go red.
       const red = s.downstreamRacks(BACKUP).filter((r) => (s.margin(r)?.cooling ?? 1) <= 0);

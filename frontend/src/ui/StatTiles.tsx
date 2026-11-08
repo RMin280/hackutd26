@@ -53,7 +53,7 @@ export function StatTiles() {
       />
       <Metric
         name={job.id}
-        value={job.status === 'running' ? 'Running' : 'Stopped'}
+        value={job.status === 'running' ? 'Running' : job.status === 'finished' ? 'Finished' : 'Stopped'}
         detail={`${job.nodes.toLocaleString()} nodes · ${job.crashes} ${job.crashes === 1 ? 'crash' : 'crashes'} · ${job.restarts} ${job.restarts === 1 ? 'restart' : 'restarts'}`}
         tone={job.status === 'stopped' ? 'red' : job.crashes > 1 ? 'gold' : 'ok'}
       />

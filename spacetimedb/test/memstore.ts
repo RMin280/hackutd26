@@ -96,6 +96,9 @@ export class MemStore implements Store {
   actor(identity: string) {
     return this.actors.get(identity);
   }
+  actorByName(name: string) {
+    return [...this.actors.values()].find((a) => a.name === name);
+  }
   hasAdmin() {
     return [...this.actors.values()].some((a) => a.role === 'admin');
   }

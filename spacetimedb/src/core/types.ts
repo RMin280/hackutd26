@@ -33,6 +33,7 @@ export type Role =
   | 'technician'
   | 'scheduler_agent'
   | 'cooling_agent'
+  | 'remediation_agent' // the Nemotron fixer (DESIGN.md §8.2)
   | 'facility'
   | 'viewer';
 export const ROLES: readonly Role[] = [
@@ -41,12 +42,13 @@ export const ROLES: readonly Role[] = [
   'technician',
   'scheduler_agent',
   'cooling_agent',
+  'remediation_agent',
   'facility',
   'viewer',
 ];
 
 /** Matches `ActorKind` in frontend/src/model/types.ts so the decision feed can render it. */
-export type ActorKind = 'facility' | 'scheduler' | 'cooling' | 'squawk';
+export type ActorKind = 'facility' | 'scheduler' | 'cooling' | 'fixer' | 'squawk';
 
 /** Matches `Verdict` in frontend/src/model/types.ts (the decision feed's badge). */
 export type FeedVerdict =
@@ -57,7 +59,30 @@ export type FeedVerdict =
   | 'shared_cause'
   | 'isolated'
   | 'placement'
-  | 'info';
+  | 'info'
+  | 'plan' // an agent wrote its plan
+  | 'fixed' // an agent finished an issue
+  | 'handoff'; // an agent handed an issue to a person or another agent
+
+/** What a decision row is about (DESIGN.md §4.3). Agents triage on this, the view maps it to a look. */
+export type EventType =
+  | 'seed'
+  | 'state_change'
+  | 'diagnosis'
+  | 'placement'
+  | 'simulated'
+  | 'lease_granted'
+  | 'lease_denied'
+  | 'approval_requested'
+  | 'lease_started'
+  | 'lease_released'
+  | 'lease_expired'
+  | 'job_status'
+  | AgentEventType;
+
+/** Rows an agent may write itself through record_event. */
+export type AgentEventType = 'agent_plan' | 'agent_step' | 'agent' | 'tech_dispatched' | 'notified' | 'escalated';
+export const AGENT_EVENT_TYPES: readonly AgentEventType[] = ['agent_plan', 'agent_step', 'agent', 'tech_dispatched', 'notified', 'escalated'];
 
 export interface PartRow {
   id: string;
@@ -121,7 +146,7 @@ export interface MarginRow {
 
 export interface JobRow {
   id: string;
-  status: string; // 'running' | 'stopped'
+  status: string; // 'running' | 'stopped' | 'finished'
   size: number; // nodes the job needs
   nodes: number; // nodes it holds now
   restarts: number;
@@ -157,6 +182,9 @@ export interface WorkRow {
   offlineNodes: string[];
   nodeCount: number; // nodes the work touches
   approvedBy: string;
+  routine: boolean; // routine work: an agent may queue a refusal and rebook it when the blockers clear
+  note: string; // free text from the requester; data only, never feeds a verdict
+  bookedBy: string; // actor who booked it on the requester's behalf ('' = the requester)
 }
 
 /** A lock held by live work (DESIGN.md §4.4). Modes: X exclusive, S shared, I intent. */
@@ -202,7 +230,7 @@ export interface PlacementRow {
   used: boolean;
 }
 
-/** The decision feed (frontend DecisionEvent). */
+/** The decision feed (frontend DecisionEvent), and the one event feed agents read by `seq`. */
 export interface DecisionRow {
   seq: bigint;
   atMin: number;
@@ -216,6 +244,9 @@ export interface DecisionRow {
   focusIds: string[];
   focusParts: string[];
   work: bigint;
+  type: string; // EventType: what happened
+  subject: string; // the node, part, job or work ('#12') it is about; '' for the hall
+  data: string; // JSON object with the typed fields agents read (DESIGN.md §4.3); '{}' when none
 }
 
 export interface ActorRow {

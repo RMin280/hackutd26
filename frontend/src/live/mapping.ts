@@ -115,6 +115,9 @@ export interface DecisionRow {
   focusKind: string;
   focusIds: string[];
   focusParts: string[];
+  type?: string; // what happened (state_change, lease_denied, agent_plan, ...)
+  subject?: string; // the node, part, job or work it is about
+  data?: string; // JSON with the typed fields agents read; the view ignores it
 }
 export interface ClockRow {
   id: number;
@@ -152,8 +155,8 @@ const byOrd = <T extends { ord: number }>(a: T, b: T) => a.ord - b.ord;
 const byId = <T extends { id: bigint }>(a: T, b: T) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 const newest = <T extends { id: bigint }>(rows: T[]): T | undefined => rows.reduce<T | undefined>((m, r) => (!m || r.id > m.id ? r : m), undefined);
 
-const ACTOR_KINDS: ActorKind[] = ['facility', 'scheduler', 'cooling', 'squawk'];
-const VERDICTS: Verdict[] = ['allow', 'warn', 'deny', 'failure', 'shared_cause', 'isolated', 'placement', 'info'];
+const ACTOR_KINDS: ActorKind[] = ['facility', 'scheduler', 'cooling', 'fixer', 'squawk'];
+const VERDICTS: Verdict[] = ['allow', 'warn', 'deny', 'failure', 'shared_cause', 'isolated', 'placement', 'info', 'plan', 'fixed', 'handoff'];
 
 /** The facility map. Rebuild only when parts, racks, nodes or downstream rows are added or removed. */
 export function toSite(t: Pick<Tables, 'part' | 'rack' | 'node' | 'downstream'>): Site {
@@ -261,7 +264,7 @@ export function toWorld(t: Tables, site: Site): World {
   const job: JobStatus = jobRow
     ? {
         id: jobRow.id,
-        status: jobRow.status === 'running' ? 'running' : 'stopped',
+        status: jobRow.status === 'running' ? 'running' : jobRow.status === 'finished' ? 'finished' : 'stopped',
         nodes: jobRow.nodes,
         restarts: jobRow.restarts,
         crashes: jobRow.crashes,
@@ -302,6 +305,8 @@ export function toEvents(rows: DecisionRow[]): DecisionEvent[] {
       verdict: VERDICTS.includes(e.verdict as Verdict) ? (e.verdict as Verdict) : 'info',
       reason: e.reason,
       focus: toFocus(e.focusKind, e.focusIds, e.focusParts),
+      type: e.type,
+      subject: e.subject,
     }));
 }
 

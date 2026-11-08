@@ -150,7 +150,7 @@ All tables are public except `audit`, `actor`, `settings` and `incident`. Rows m
 | `World.diagnosis` / `placement` | newest `diagnosis` / `placement` row |
 | `World.job` | `job` |
 | `World.deniedRequests` | count of `work` rows with `status = 'denied'` |
-| `DecisionEvent[]` | `decision` (newest first by `seq`; `atMin` is the frontend's `time`, `focusKind` + `focusIds` its `focus`) |
+| `DecisionEvent[]` | `decision` (newest first by `seq`; `atMin` is the frontend's `time`, `focusKind` + `focusIds` its `focus`). It is also the agents' event feed: `type` says what happened (`state_change`, `lease_denied`, `agent_plan`, ...), `subject` what it is about, `data` is a JSON object with the typed fields (DESIGN.md §4.3) |
 | caption, step, mode, camera | `scenario` |
 
 `claim` lists every live lock, so the view can outline locked racks, nodes and aisles. `failure` lists every node failure with its time. `work.ticket` is a caller-chosen id: an agent passes one with its request, then reads its verdict with `SELECT * FROM work WHERE ticket = '...'`.
@@ -159,12 +159,13 @@ All tables are public except `audit`, `actor`, `settings` and `incident`. Rows m
 
 | Reducer (CLI name) | Who |
 | --- | --- |
-| `request_work(kind, target, start_in_min, duration_min, dry_run, ticket)` | technician: every kind · cooling_agent: `facility_work` on CDUs/chillers · scheduler_agent: `sw_online`, `sw_exclusive` · shift_lead, admin |
+| `request_work(kind, target, start_in_min, duration_min, dry_run, ticket, routine, note, on_behalf_of)` | technician: every kind · cooling_agent: `facility_work` on CDUs/chillers · scheduler_agent: `sw_online`, `sw_exclusive` · remediation_agent: `node_repair` · shift_lead, admin. `routine`: the fixer may queue a refusal and rebook it; `note`: free text kept as data; `on_behalf_of`: an actor's name, needs `book_for_others` (remediation_agent, shift_lead, admin), and the role, rows and ownership are the requester's |
 | `approve_work(id)`, `reject_work(id, note)` | shift_lead, admin |
-| `release_work(id)` | whoever requested it, shift_lead, admin |
+| `release_work(id, note)` | whoever requested it, shift_lead, admin; remediation_agent for a protection lock whose job has `finished` |
 | `report_node_failure(node)` | scheduler_agent, facility, shift_lead, admin |
-| `diagnose_failure(nodes)` | scheduler_agent, technician, shift_lead, admin |
-| `safe_placement(job, needed, duration_min, exclude, diagnosis_id)`, `restart_job(job, placement_id)`, `naive_restart(job, failed_node)`, `request_protection(job, duration_min, ticket)` | scheduler_agent, shift_lead, admin |
+| `diagnose_failure(nodes)` | scheduler_agent, remediation_agent, technician, shift_lead, admin |
+| `safe_placement(job, needed, duration_min, exclude, diagnosis_id)`, `restart_job(job, placement_id)`, `naive_restart(job, failed_node)`, `request_protection(job, duration_min, ticket)`, `finish_job(job)` | scheduler_agent, shift_lead, admin. `finish_job` frees the job's nodes; a protection lease it held stays until released (the fixer cleans up a stale one) |
+| `record_event(type, subject, reason, data)` | remediation_agent, scheduler_agent, cooling_agent, shift_lead, admin. An agent's own feed row: `type` is `agent_plan`, `agent_step`, `agent`, `tech_dispatched`, `notified` or `escalated`; `data` a JSON object (≤ 4,000 chars) whose fields set the title (`steps[].tool`, `status`, `trade`, `to`); `subject` a node, part, job or work (`#12`) |
 | `set_part_state(part, state)`, `set_node_state(node, state)` | facility, shift_lead, admin |
 | `advance_clock(minutes)` | shift_lead, admin |
 | `scenario_start(mode)`, `scenario_next(mode)`, `scenario_goto(mode, step)`, `reset_demo()`, `seed_diagnostics()` | shift_lead, admin |

@@ -41,6 +41,7 @@ export interface Store {
   settings(): SettingsRow; // returns defaults when the row doesn't exist yet
   putSettings(row: SettingsRow): void;
   actor(identity: string): ActorRow | undefined;
+  actorByName(name: string): ActorRow | undefined; // the requester named in a book_for_others request
   hasAdmin(): boolean;
   putActor(row: ActorRow): void;
   job(id: string): JobRow | undefined;

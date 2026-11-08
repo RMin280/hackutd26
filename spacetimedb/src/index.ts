@@ -140,6 +140,9 @@ const work = table(
     offlineNodes: t.array(t.string()),
     nodeCount: t.u32(),
     approvedBy: t.string(),
+    routine: t.bool(), // routine work: the fixer may queue a refusal and rebook it when the blockers clear
+    note: t.string(), // free text from the requester (data only)
+    bookedBy: t.string(), // actor who booked it on the requester's behalf, '' = the requester
   },
 );
 
@@ -197,21 +200,25 @@ const placement = table(
   },
 );
 
+// The one event feed (DESIGN.md §4.3): the view renders it, agents read it by seq and triage on `type`.
 const decision = table(
   { public: true },
   {
     seq: t.u64().primaryKey().autoInc(),
     atMin: t.u32(),
     actor: t.string(),
-    actorKind: t.string(), // facility | scheduler | cooling | squawk
+    actorKind: t.string(), // facility | scheduler | cooling | fixer | squawk
     actorRole: t.string(),
     title: t.string(),
-    verdict: t.string(), // allow | warn | deny | failure | shared_cause | isolated | placement | info
+    verdict: t.string(), // allow | warn | deny | failure | shared_cause | isolated | placement | info | plan | fixed | handoff
     reason: t.string(),
     focusKind: t.string(), // rack | node | part | racks | overview
     focusIds: t.array(t.string()),
     focusParts: t.array(t.string()),
     work: t.u64(),
+    type: t.string().index('btree'), // what happened: state_change | lease_denied | agent_plan | ... (core/types.ts EventType)
+    subject: t.string(), // the node, part, job or work ('#12') it is about
+    data: t.string(), // JSON object with the typed fields agents read
   },
 );
 
@@ -263,7 +270,7 @@ const actor = table(
   { public: false },
   {
     identity: t.string().primaryKey(), // hex
-    name: t.string(),
+    name: t.string().index('btree'), // looked up when work is booked on an actor's behalf
     role: t.string(),
     rows: t.array(t.u32()), // empty = every row
   },
@@ -346,6 +353,7 @@ function storeFor(ctx: Ctx): Store {
       else db.settings.insert(row);
     },
     actor: (identity) => db.actor.identity.find(identity) ?? undefined,
+    actorByName: (name) => all(db.actor.name.filter(name))[0] ?? undefined,
     hasAdmin: () => all(db.actor.iter()).some((a) => a.role === 'admin'),
     putActor: (row) => {
       if (db.actor.identity.find(row.identity)) db.actor.identity.update(row);
@@ -535,7 +543,9 @@ export const reportNodeFailure = spacetimedb.reducer({ node: t.string() }, (ctx,
  * Ask before acting. kind: node_repair | rack_work | hot_aisle_work | facility_work |
  * switch_firmware | sw_online | sw_exclusive. target: node, rack, row-N, ha-N, part or job id.
  * startInMin / durationMin: 0 = now / the kind's default. dryRun: verdict only (simulate).
- * ticket: your own id, so you can find the result row in `work`.
+ * ticket: your own id, so you can find the result row in `work`. routine: routine work an
+ * agent may queue and rebook if refused. note: free text, kept as data. onBehalfOf: book for
+ * that actor (by name): needs book_for_others, and the check runs as them ('' = yourself).
  */
 export const requestWork = spacetimedb.reducer(
   {
@@ -545,6 +555,9 @@ export const requestWork = spacetimedb.reducer(
     durationMin: t.u32(),
     dryRun: t.bool(),
     ticket: t.string(),
+    routine: t.bool(),
+    note: t.string(),
+    onBehalfOf: t.string(),
   },
   (ctx, a) => run(ctx, (s, me) => cmd.requestWork(s, me, a)),
 );
@@ -557,8 +570,21 @@ export const rejectWork = spacetimedb.reducer({ id: t.u64(), note: t.string() },
   run(ctx, (s, me) => cmd.rejectWork(s, me, id, note)),
 );
 
-export const releaseWork = spacetimedb.reducer({ id: t.u64() }, (ctx, { id }) =>
-  run(ctx, (s, me) => cmd.releaseWork(s, me, id)),
+/** The requester, a shift lead, or the fixer for a protection lock whose job has finished. */
+export const releaseWork = spacetimedb.reducer({ id: t.u64(), note: t.string() }, (ctx, { id, note }) =>
+  run(ctx, (s, me) => cmd.releaseWork(s, me, id, note)),
+);
+
+// ---------------------------------------------------------------- agent events (DESIGN.md §4.3)
+
+/**
+ * An agent's own row in the decision feed: type agent_plan | agent_step | agent | tech_dispatched |
+ * notified | escalated; subject: the node, part, job or work ('#12') it is about; data: a JSON
+ * object with the fields the view and other agents read (steps, status, trade, to, ...).
+ */
+export const recordEvent = spacetimedb.reducer(
+  { type: t.string(), subject: t.string(), reason: t.string(), data: t.string() },
+  (ctx, a) => run(ctx, (s, me) => cmd.recordEvent(s, me, a.type, a.subject, a.reason, a.data)),
 );
 
 // ---------------------------------------------------------------- big-job failure
@@ -580,6 +606,11 @@ export const safePlacement = spacetimedb.reducer(
 
 export const restartJob = spacetimedb.reducer({ job: t.string(), placementId: t.u64() }, (ctx, a) =>
   run(ctx, (s, me) => cmd.restartJob(s, me, a.job, a.placementId)),
+);
+
+/** The job is done: its nodes return to the pool; a protection lease it held stays until released. */
+export const finishJob = spacetimedb.reducer({ job: t.string() }, (ctx, { job }) =>
+  run(ctx, (s, me) => cmd.finishJob(s, me, job)),
 );
 
 /** The naive scheduler: swap in the nearest free node and restart, no diagnosis, no check. */

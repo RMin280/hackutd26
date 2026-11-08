@@ -15,6 +15,7 @@ export const ID = {
   facility: hex('f'),
   tech3: hex('1'),
   coolRow3: hex('2'),
+  fixer: hex('3'),
   stranger: hex('9'),
 };
 
@@ -26,6 +27,7 @@ const PEOPLE: [keyof typeof ID, string, Role, number[]][] = [
   ['facility', 'Facility', 'facility', []],
   ['tech3', 'Tech Row 3', 'technician', [3]],
   ['coolRow3', 'Cooling agent R3', 'cooling_agent', [3, 4]],
+  ['fixer', 'Fixer agent', 'remediation_agent', []],
 ];
 
 export function withPeople(s: MemStore): MemStore {
