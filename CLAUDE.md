@@ -39,7 +39,8 @@ It is one system: the **backend** (SpacetimeDB) holds the map and gives every ve
 | One-click scenario + 100k-GPU scale test | Real integrations (DCIM, BMS, NetBox, Slurm import), SSO, multi-site |
 | **Fixer agent (Nemotron)** on the live backend, **in the main demo**: 4 low-criticality issue types fixed only through Squawk (`agents/fixer/`, DESIGN.md §8.2), plus the backend additions it needs (DESIGN.md §8.4) and its rows in the decision feed | **Dependency agent** (Nemotron; gray failures in services we rely on): built on `nemotron-init`, **deferred** until the fixer is live. Code stays on the branch; DESIGN.md §8.3 |
 | **Update agent (Nemotron)**, added 2026-11-08 at the team's request: security advisories matched against an agent-side simulated inventory, fixes rolled out in canary-first waves through Squawk's software scopes, keeping a spare reserve (`agents/patch/`, role `update_agent`); credit caps for every model request (`agents/budget.py`); dependency audit for this repo (`python -m agents.deps`) | Real advisory feeds (NVD / CISA KEV / vendor), inventory import from fleet management |
-| Deployment on two machines over Tailscale (backend + agents + Brev on one, the view on the other) | MCP server (7 tools): **built 2026-11-08** (`agents/mcp_server.py`), a thin wrapper over the agents' HTTP adapter; not needed for the demo |
+| Deployment: SpacetimeDB Maincloud first, two machines over Tailscale as the fallback (DESIGN.md §10.5) | MCP server (7 tools): **built 2026-11-08** (`agents/mcp_server.py`), a thin wrapper over the agents' HTTP adapter; not needed for the demo |
+| **Work board** (team decision 2026-11-08; DESIGN.md §4.5): what the floor sees, in the same app (`B`, `?view=work`): lanes of decided work with trade and level, locks, who took what on, agents' state; `accept_work` / `complete_work` as bookkeeping on leases the interlock decided. It assigns nobody | The risk-aware allocator stays roadmap: no scoring of people, no automatic assignment |
 
 ## Scope-creep rules
 
@@ -103,7 +104,7 @@ The computing scales because every question touches only one branch of a shallow
 - **Fixer agent (Nemotron):** Python 3.11+ in `agents/`. LLM: NVIDIA Nemotron over the OpenAI-compatible chat API, through `agents/llm.py`'s `ModelRouter`. **Primary: our own Nemotron on an NVIDIA Brev GPU machine** (NIM or vLLM, port-forwarded to the backend machine). **Fallback, automatic while Brev is down: Nemotron 3 Ultra (free) on OpenRouter** (`nvidia/nemotron-3-ultra-550b-a55b:free`; 20 requests/min and 50/day, or 1,000/day after buying 10 credits). Both down → the agent fails closed. It codes against the `Squawk` interface in `agents/squawk.py`; `MockSquawk` (a simulated hall) implements it offline, and the HTTP adapter over SpacetimeDB (reducer calls + SQL, since there's no maintained Python SDK) implements it live. See `agents/README.md`.
 - **Frontend:** React + Vite + TypeScript, three.js floor map (React Three Fiber). Live mode (`VITE_SPACETIMEDB_URI` set) subscribes to the module's tables through generated bindings (`frontend/src/live`, `frontend/src/module_bindings`); the mock in `frontend/src/mock` is the offline fallback.
 - **Deployment (demo):** two machines on one Tailscale network. **Machine A** (dedicated): `spacetime start`, the published module, the fixer agent, and the Brev port-forward. **Machine B**: the view, with `VITE_SPACETIMEDB_URI` pointing at machine A's tailnet address. `HANDOFF.md` §8 has the checklist.
-- **MCP server:** if time, last. A thin wrapper exposing the agents' HTTP adapter as the 7 tools in DESIGN.md §8.1.
+- **MCP server:** built (`python -m agents.mcp_server`, `agents/README.md`): a thin wrapper exposing the agents' HTTP adapter as the 7 tools in DESIGN.md §8.1.
 - **Tests:** backend: `node:test` via `tsx` in `spacetimedb/test` (`npm run test:scale` for the scale suite). Agents: `pytest` in `tests/`.
 
 ## Naming
@@ -154,7 +155,8 @@ hackutd26/
 ├── tests/                   # pytest: agents (triage, fixer, dependency, llm router, mock)
 ├── (agents/mcp_server.py)   # MCP tools over the agents' HTTP adapter (not a top-level mcp/: it would shadow the SDK)
 └── frontend/                # control-room view (Squawk); src/live/ = SpacetimeDB data source, src/mock/ = fallback
-    └── src/scene/           # three.js hall, racks, parts, Staff.tsx (gull model), Tech.tsx (hardware repairs), FixerPopups.tsx (software fixes), Building.tsx + airlock.ts (walls, interlocked entrance, corridor, tech office), Doors.tsx
+    ├── src/scene/           # three.js hall, racks, parts, Staff.tsx (gull model), Tech.tsx (hardware repairs), FixerPopups.tsx (software fixes), Building.tsx + airlock.ts (walls, interlocked entrance, corridor, tech office), Doors.tsx
+    └── src/ui/board/        # the work board (B, ?view=work): what the floor sees; board.ts is the pure logic, tested from spacetimedb/test
 ```
 
 Not in the repo, although older docs mentioned them: `FRONTEND.md`, `.claude/skills/`, `three-playground.html`, `data/`, `backend/`.

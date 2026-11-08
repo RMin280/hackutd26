@@ -80,6 +80,8 @@ export type EventType =
   | 'lease_released'
   | 'lease_expired'
   | 'job_status'
+  | 'work_accepted' // a worker took a lease on (the work board)
+  | 'work_completed' // the worker finished early: target repaired where it was unhealthy, claims released
   | AgentEventType;
 
 /** Rows an agent may write itself through record_event. */
@@ -187,6 +189,19 @@ export interface WorkRow {
   routine: boolean; // routine work: an agent may queue a refusal and rebook it when the blockers clear
   note: string; // free text from the requester; data only, never feeds a verdict
   bookedBy: string; // actor who booked it on the requester's behalf ('' = the requester)
+}
+
+/** Who is doing a piece of work (the work board). One row per work id, written by
+ *  accept_work / complete_work; the lease itself stays in `work`. Protection leases have none. */
+export interface AssignmentRow {
+  work: bigint;
+  assignee: string; // actor name (names are how actors appear everywhere in the feed)
+  assigneeRole: string;
+  acceptedAt: number; // simulated minute, -1 = never accepted
+  completedBy: string; // '' until completed
+  completedAt: number; // -1 until completed
+  repaired: string[]; // targets marked ok on completion (the failed node, the degraded CDU)
+  note: string; // completion note, data only
 }
 
 /** A lock held by live work (DESIGN.md §4.4). Modes: X exclusive, S shared, I intent. */

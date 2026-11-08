@@ -33,6 +33,7 @@ export const C = {
   nodeJob: '#1d3b5e',
   nodeTenant: '#2c2c30',
   nodeFree: '#1a1a1c',
+  nodeOut: '#0f0f11', // held out of service by a maintenance lease: powered down, LEDs dark
 
   // equipment
   partBody: '#232326',

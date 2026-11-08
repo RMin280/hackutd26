@@ -57,6 +57,7 @@ export const SCRIPTED = {
   network: scripted(7, 'Network tech', 'technician'),
   tech: scripted(8, 'Facility tech', 'technician'),
   lead: scripted(9, 'Shift lead (on call)', 'shift_lead'),
+  hardware: scripted(10, 'Hardware tech', 'technician'),
 };
 
 export function ensureScriptedActors(s: Store): void {
