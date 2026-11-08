@@ -188,10 +188,10 @@ const squawk: Step[] = [
       });
       patchScenario(s, { placementId: id });
       const p = s.placement(id)!;
-      const racks = [...new Set(p.nodes.map((n) => s.node(n)!.rack))];
       return {
         caption: `It finds ${p.nodes.length} replacement nodes on healthy racks with full backup, away from ${label(CAUSE)}.`,
-        camera: onRacks(racks),
+        // The whole hall, so "away from CDU-3" is visible: the spares light up across the floor from the gold racks (same as the view's mock).
+        camera: overview(),
       };
     },
   },
