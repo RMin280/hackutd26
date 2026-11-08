@@ -117,7 +117,7 @@ Leases auto-expire and are written to the audit log.
 
 ### 4.3 Events
 
-Ordered list: `{seq, time, type, parts, racks, jobs, reason}`. Types: `state_change`, `margin_change`, `diagnosis`, `placement`, `lease_granted`, `lease_denied`. Agents **poll** `get_events(since)`; the UI receives the same events over SSE.
+Ordered list: `{seq, time, type, parts, racks, jobs, reason}`. Types: `state_change`, `margin_change`, `diagnosis`, `placement`, `lease_granted`, `lease_denied`, `lease_released`, `lease_expired`, `job_status`, plus the fixer agent's `agent_plan`, `tech_dispatched`, `notified`, `approval_requested`, `escalated`, `agent` (§8.2). Agents **poll** `get_events(since)`; the UI receives the same events over SSE.
 
 ## 5. Failure diagnosis (`diagnose.py`)
 
@@ -214,7 +214,29 @@ Every call carries an API key; scope is checked first; every call is logged.
   - *Naive mode:* on a node failure, it swaps in the nearest free node and restarts.
   - *Blast Radius mode:* it calls `diagnose_failure`, then `safe_placement`, restarts, and requests a protection lease.
 - **Cooling agent** (scripted): requests a maintenance lease on a CDU at a set time.
+- **Fixer agent** (Nemotron, §8.2): fixes low-criticality issues on its own, only through Blast Radius.
 - **LLM technician assistant:** roadmap, built only if everything else is done. It may only call tools.
+
+### 8.2 Fixer agent (low-criticality fixes)
+
+An LLM agent that clears low-criticality issues so people only see the ones that matter. It runs on NVIDIA Nemotron: our own on a Brev GPU machine, with Nemotron 3 Ultra (free) on OpenRouter as an automatic backup. Deterministic code decides what's low. The model only works through a fixed playbook, with tools bound to the issue, and Blast Radius checks every action.
+
+**Low** = every rack keeps full backup, nothing in a running job is touched, and Blast Radius allows every action.
+
+| Issue | The agent | Hands off when |
+| --- | --- | --- |
+| Broken spare or tenant node (isolated) | Takes a maintenance lease on the node, sends a hardware tech, tells the tenant | Shared cause, job node, degraded tenant node, rack not green or protected |
+| Repaired node back to spares | Releases its lease once the rack is green | Same node failed twice in 24 h |
+| Refused routine maintenance | Waits, with no model calls, until the blockers clear, then rechecks: books it for the requester on `allow`, asks the shift lead on `warn` | Still blocked after 24 h |
+| Stale protection lock | Releases a lock whose job has `finished` | The job only stopped |
+
+**Never handled by it:** the big job's nodes (that's the scheduler agent's flow), shared causes, red racks, yellow racks with running work, protected racks, and free text with no matching change in the map.
+
+**How it works an issue:** Nemotron gets the issue's facts, its goal and its tools, never a list of steps, and writes its own plan first. Code checks the plan: only this playbook's tools, every action after its check, the whole goal covered, and a way to stop. The decision feed shows the plan. Nemotron then follows it, or revises it with a reason before doing anything off-plan.
+
+**Guardrails, enforced in code:** each issue type gets only its own bound tools; after a refusal only the playbook's follow-ups are allowed; deterministic checks confirm the result once the model says it's done; at most 10 model calls per issue; report text is fenced as untrusted data; it fails closed when the model or Blast Radius is unreachable.
+
+**What the backend adds for it:** maintenance leases on single nodes, a `routine` flag on requests, a `finished` job state, booking on behalf of a requester, shift-lead approvals, and the events listed in §4.3. Contract: `agents/README.md`.
 
 ## 9. Security (Iteration 1 baseline)
 
@@ -276,6 +298,7 @@ New ideas go into this table, not into the code.
 - **Placement:** excludes at-risk, yellow/red racks, booked maintenance and busy nodes; prefers locality; reports a shortfall.
 - **Security:** missing or invalid key refused; out-of-scope row refused; every call logged; free text doesn't change verdicts.
 - **Scenario:** naive mode crashes twice; Blast Radius mode restarts once and the cooling lease is denied.
+- **Fixer agent:** triage sorts each issue type and each hand-off case correctly; the storyline fixes one issue of each type; tools outside the playbook, actions after a refusal, "done" without the result, the step budget and both outages all end safely (`tests/test_triage.py`, `tests/test_fixer.py`).
 - **Scale (`-m scale`):** every limit in §7.2.
 
 ## 13. Open questions

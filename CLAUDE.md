@@ -34,6 +34,7 @@ AI agents connect through an **MCP server**. Humans use the **control-room view*
 | Per-actor keys, row-level scopes, audit log | Grid emergency mode, near-miss learning |
 | Control-room view: floor map + decision feed + naive-vs-Blast-Radius toggle | LLM technician assistant (only if everything else is done) |
 | One-click scenario + 100k-GPU scale test | Real integrations (DCIM, BMS, NetBox, Slurm import), SSO, multi-site |
+| Fixer agent (Nemotron): fixes 4 low-criticality issue types only through Blast Radius (`agents/fixer/`, DESIGN.md §8.2) | |
 
 ## Scope-creep rules
 
@@ -87,7 +88,8 @@ The computing scales because every question touches only one branch of a shallow
 
 ## Stack (default; change here if the team decides otherwise)
 
-- **Backend:** Python 3.11+, FastAPI, `pydantic`. Plain dicts/indexes for the graph on the hot path (`networkx` allowed for build-time checks only).
+- **Backend:** SpacetimeDB module (teammate's branch): facility state, leases and events as tables, actions as reducers. Plain dicts/indexes for the graph on the hot path.
+- **Agents:** Python 3.11+ in `agents/`. LLM: NVIDIA Nemotron over the OpenAI-compatible API, through `agents/llm.py`'s `ModelRouter`. Primary: our own Nemotron on an NVIDIA Brev GPU machine (NIM or vLLM). Backup, used automatically while Brev is down: Nemotron 3 Ultra (free) on OpenRouter (`nvidia/nemotron-3-ultra-550b-a55b:free`; 20 requests/min and 50/day, or 1,000/day after buying 10 credits). Both down → agents fail closed. Agents reach SpacetimeDB over its HTTP API (reducer calls + SQL) because there's no maintained Python SDK. Keys live in `.env` (gitignored; template in `.env.example`).
 - **Agent interface:** official Python MCP SDK (`mcp`, `FastMCP`).
 - **Frontend:** React + Vite + TypeScript, SVG floor map, SSE for live updates.
 - **Tests:** `pytest` (`-m scale` for the scale suite).
@@ -119,7 +121,15 @@ blast-radius/
 │   ├── audit.py             # append-only log
 │   ├── api.py               # FastAPI (REST + SSE)
 │   └── mcp_server.py        # MCP tools
+├── .env.example             # agent settings template; copy to .env (gitignored)
 ├── agents/
+│   ├── config.py            # settings from env / .env (OpenRouter key, model, SpacetimeDB host)
+│   ├── llm.py               # ModelRouter: Brev Nemotron first, OpenRouter Ultra (free) backup (no safety logic)
+│   ├── check_setup.py       # verifies key, Nemotron tool calling, SpacetimeDB reachability
+│   ├── blast_radius.py      # BlastRadius interface the agents code against (SpacetimeDB contract in agents/README.md)
+│   ├── mock_blast_radius.py # in-process simulated hall implementing it, until the SpacetimeDB module lands
+│   ├── fixer/               # fixer agent: triage.py (what's low), playbooks.py (goals, bound tools, plan checks),
+│   │                        #   agent.py (Nemotron plans and executes), runner.py (events), demo.py, scripted.py
 │   ├── scheduler_agent.py   # scripted stand-in for Slurm/K8s: naive mode vs Blast Radius mode
 │   └── cooling_agent.py     # scripted: requests CDU maintenance
 ├── frontend/                # control-room view
@@ -134,7 +144,9 @@ blast-radius/
 ## Commands (fill in as they're created)
 
 ```
-pip install -r requirements.txt
+pip install -r requirements.txt     # or: uv venv .venv --python 3.11 && uv pip install -r requirements.txt
+python -m agents.check_setup        # both model endpoints (Brev primary, OpenRouter backup), a tool-call round trip, SpacetimeDB reachability (--no-llm: no model requests)
+python -m agents.fixer              # fixer agent storyline on the simulated hall (--scripted: no model requests)
 uvicorn backend.api:app --reload
 python -m backend.mcp_server
 python tools/gen_site.py --gpus 100000 --out data/scale_site.json
