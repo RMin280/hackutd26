@@ -50,7 +50,7 @@ export const ROLES: readonly Role[] = [
 ];
 
 /** Matches `ActorKind` in frontend/src/model/types.ts so the decision feed can render it. */
-export type ActorKind = 'facility' | 'scheduler' | 'cooling' | 'fixer' | 'squawk';
+export type ActorKind = 'facility' | 'scheduler' | 'cooling' | 'fixer' | 'updater' | 'squawk';
 
 /** Matches `Verdict` in frontend/src/model/types.ts (the decision feed's badge). */
 export type FeedVerdict =

@@ -84,6 +84,7 @@ const AGENT_STATE: Record<AgentState, { text: string; tone: Tone }> = {
 
 const AGENT_KIND: Record<AgentCard['kind'], string> = {
   fixer: 'Nemotron fixer',
+  updater: 'Nemotron updater',
   scheduler: 'Scheduler agent',
   cooling: 'Cooling agent',
   facility: 'Facility',

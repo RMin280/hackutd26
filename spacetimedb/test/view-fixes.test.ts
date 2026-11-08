@@ -59,3 +59,29 @@ test('only the last few lines are kept; a hand-off or failing closed ends it; a 
   assert.equal(fixes[2].status, 'stopped');
   assert.notEqual(fixes[0].key, fixes[1].key);
 });
+
+test("the update agent's advisory gets its own popup, follows its wave onto the hall and waits between waves", () => {
+  const upd = (p: Partial<DecisionEvent>) => row({ actor: 'update-agent', actorKind: 'updater', subject: 'SQK-SIM-2026-0419', focus: { kind: 'overview' }, ...p });
+  const rows = [
+    upd({ type: 'agent', title: 'Working on SQK-SIM-2026-0419' }),
+    upd({ type: 'agent_plan', verdict: 'plan', title: 'Plan for SQK-SIM-2026-0419: check_wave → book_wave' }),
+    upd({ type: 'lease_granted', verdict: 'allow', subject: 'row-1', focus: { kind: 'racks', ids: ['rack-r1-01', 'rack-r1-02'] }, title: 'Online update on Row 1 allowed' }),
+    row({ subject: 'node-12' }), // the fixer, at the same time: its own popup
+    upd({ type: 'agent', title: 'Waiting on SQK-SIM-2026-0419' }),
+    row({ actor: 'Scheduler', actorKind: 'scheduler', type: 'lease_granted', subject: 'job-train-1' }), // not the update agent's
+  ];
+  const fixes = softwareFixes(newestFirst(rows));
+  assert.deepEqual(fixes.map((f) => [f.agent, f.subject, f.status]), [
+    ['updater', 'SQK-SIM-2026-0419', 'waiting'],
+    ['fixer', 'node-12', 'working'],
+  ]);
+  assert.deepEqual(fixes[0].focus, { kind: 'racks', ids: ['rack-r1-01', 'rack-r1-02'] });
+  assert.ok(fixes[0].lines.some((l) => l.text === 'Online update on Row 1 allowed'));
+
+  // The next wave continues the same popup; a lease row with no advisory open is not a fix.
+  const more = [...rows, upd({ type: 'agent_step', title: 'check_wave: Next wave: 4 of 9' }), upd({ type: 'agent', verdict: 'fixed', title: 'Fixed SQK-SIM-2026-0419' })];
+  more.push(upd({ type: 'lease_granted', verdict: 'allow', subject: 'row-2' }));
+  const after = softwareFixes(newestFirst(more));
+  assert.equal(after.filter((f) => f.agent === 'updater').length, 1);
+  assert.equal(after[0].status, 'fixed');
+});

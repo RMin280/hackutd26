@@ -171,7 +171,7 @@ export interface AgentCard {
   model?: string;
 }
 
-const AGENT_KINDS: readonly DecisionEvent['actorKind'][] = ['fixer', 'scheduler', 'cooling'];
+const AGENT_KINDS: readonly DecisionEvent['actorKind'][] = ['fixer', 'updater', 'scheduler', 'cooling'];
 
 function dataOf(e: DecisionEvent): Record<string, unknown> {
   if (!e.data) return {};
