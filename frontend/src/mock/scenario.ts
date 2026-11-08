@@ -201,7 +201,7 @@ const blastRadius: Step[] = [
       const d = diagnose(ctx.site, ctx.world, FIRST_FAIL);
       ctx.world.diagnosis = d;
       ctx.emit({
-        actor: 'Blast Radius',
+        actor: 'Squawk',
         actorKind: 'blast_radius',
         title: `Diagnosis: ${d.classification === 'shared_cause' ? `shared cause ${label(d.cause!)}` : 'isolated'}`,
         verdict: d.classification,
@@ -209,14 +209,14 @@ const blastRadius: Step[] = [
         focus: d.cause ? { kind: 'part', id: d.cause } : { kind: 'node', id: FIRST_FAIL },
       });
       return {
-        caption: `Blast Radius diagnoses ${FIRST_FAIL}: shared cause ${label(d.cause ?? '')}. ${d.atRisk.length} other job nodes are at risk. Send a ${d.send}.`,
+        caption: `Squawk diagnoses ${FIRST_FAIL}: shared cause ${label(d.cause ?? '')}. ${d.atRisk.length} other job nodes are at risk. Send a ${d.send}.`,
         camera: { kind: 'racks', ids: causeRacks(ctx.site), parts: [CAUSE] },
       };
     },
   },
   {
     at: 12,
-    title: 'Find a safe place to restart',
+    title: 'Find a safe restart',
     run: (ctx) => {
       const d = ctx.world.diagnosis!;
       const exclude = [FIRST_FAIL, ...d.atRisk];
@@ -224,7 +224,7 @@ const blastRadius: Step[] = [
       ctx.world.placement = p;
       const racks = [...new Set(p.nodes.map((n) => ctx.site.nodes[n].rack))];
       ctx.emit({
-        actor: 'Blast Radius',
+        actor: 'Squawk',
         actorKind: 'blast_radius',
         title: `Safe placement: ${p.nodes.length} nodes`,
         verdict: 'placement',
@@ -233,7 +233,8 @@ const blastRadius: Step[] = [
       });
       return {
         caption: `It finds ${p.nodes.length} replacement nodes on healthy racks with full backup, away from ${label(CAUSE)}.`,
-        camera: { kind: 'racks', ids: racks },
+        // The whole hall, so "away from CDU-3" is visible: the spares light up across the floor from the gold racks.
+        camera: { kind: 'overview' },
       };
     },
   },
@@ -268,7 +269,7 @@ const blastRadius: Step[] = [
   },
   {
     at: 30,
-    title: 'Cooling agent asks for CDU-4',
+    title: 'Agent asks for CDU-4',
     run: (ctx) => {
       const check = checkMaintenance(ctx.site, ctx.world, BACKUP);
       if (check.verdict === 'deny') ctx.world.deniedRequests++;

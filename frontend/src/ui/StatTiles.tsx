@@ -80,7 +80,7 @@ export function StatTiles() {
               ? `Protecting ${protection.racks?.length ?? 0} racks for 72 h`
               : 'No leases held'
         }
-        tone={world.deniedRequests ? 'red' : protection ? 'azure' : 'muted'}
+        tone={world.deniedRequests || protection ? 'azure' : 'muted'}
       />
     </div>
   );

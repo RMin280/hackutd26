@@ -50,23 +50,26 @@ export function makeTextTexture(text: string, weight = 500, letterSpacing = 0.14
   return { texture, aspect: canvas.width / canvas.height };
 }
 
+/** A solid azure tile with a black padlock, like the primary button: reads on top of an azure lid. */
 export function makeLockTexture(): THREE.CanvasTexture {
   const c = document.createElement('canvas');
   c.width = c.height = 128;
   const g = c.getContext('2d')!;
-  g.fillStyle = 'rgba(43,156,252,0.2)';
-  g.fillRect(10, 10, 108, 108);
-  g.strokeStyle = '#2b9cfc';
-  g.lineWidth = 9;
+  g.fillStyle = '#2b9cfc';
+  g.fillRect(6, 6, 116, 116);
+  g.strokeStyle = '#050505';
+  g.lineWidth = 10;
   g.lineCap = 'butt';
   g.beginPath();
-  g.arc(64, 54, 16, Math.PI, 0);
-  g.lineTo(80, 64);
-  g.moveTo(48, 54);
-  g.lineTo(48, 64);
+  g.arc(64, 52, 17, Math.PI, 0);
+  g.lineTo(81, 62);
+  g.moveTo(47, 52);
+  g.lineTo(47, 62);
   g.stroke();
+  g.fillStyle = '#050505';
+  g.fillRect(34, 60, 60, 42);
   g.fillStyle = '#2b9cfc';
-  g.fillRect(37, 62, 54, 38);
+  g.fillRect(61, 72, 6, 16); // keyhole
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 8;

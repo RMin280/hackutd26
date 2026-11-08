@@ -59,7 +59,7 @@ function Caption() {
   return (
     <div className={`caption ${open ? '' : 'caption-closed'}`}>
       <div className="caption-head">
-        <span className={`caption-mode tone-${mode === 'blast_radius' ? 'azure' : 'red'}`}>{mode === 'blast_radius' ? 'Blast Radius' : 'Naive scheduler'}</span>
+        <span className={`caption-mode tone-${mode === 'blast_radius' ? 'azure' : 'red'}`}>{mode === 'blast_radius' ? 'Squawk' : 'Naive scheduler'}</span>
         <span className="caption-step">{stepIndex < 0 ? 'Ready' : `Step ${stepIndex + 1} of ${total}`}</span>
         <button
           className="icon-btn"
@@ -108,6 +108,8 @@ function useKeys() {
         s.setMode('naive');
       } else if (e.key === '2') {
         s.setMode('blast_radius');
+      } else if (e.key === 'g' || e.key === 'G') {
+        s.toggleStaff();
       }
     };
     window.addEventListener('keydown', onKey);

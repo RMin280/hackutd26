@@ -83,7 +83,7 @@ export function Sidebar() {
   return (
     <aside className="sidebar">
       <header className="side-head">
-        <span className="wordmark">Blast Radius</span>
+        <span className="wordmark">Squawk</span>
         <button className="icon-btn" onClick={() => toggle('sidebar')} title="Hide panel" aria-label="Hide scenario panel">
           <IconChevron dir="left" />
         </button>
@@ -96,7 +96,7 @@ export function Sidebar() {
             Naive
           </button>
           <button role="radio" aria-checked={mode === 'blast_radius'} className={mode === 'blast_radius' ? 'on' : ''} onClick={() => setMode('blast_radius')}>
-            Blast Radius
+            Squawk
           </button>
         </div>
       </section>

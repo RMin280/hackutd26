@@ -1,4 +1,4 @@
-# Blast Radius · control-room view
+# Squawk · control-room view
 
 3D floor map of the demo hall (three.js via React Three Fiber) with a dark dashboard shell.
 
@@ -18,7 +18,8 @@ npm run build      # typecheck + production build
 | `P` | Play / pause (one step every ~4 s) |
 | `R` | Reset the scenario |
 | `Esc` | Close the card, then back to the overview |
-| `1` / `2` | Naive scheduler / Blast Radius mode |
+| `1` / `2` | Naive scheduler / Squawk mode |
+| `G` | Hide / show the seagull crew |
 
 Moving around the hall (map-style): drag to pan along the floor, right-drag to rotate, scroll to zoom toward the cursor, `WASD` to move, `Q`/`E` to turn, hold `Shift` to go faster.
 
@@ -28,17 +29,27 @@ Every panel collapses with its chevron: the sidebar and the decision feed fold i
 
 ## The hall
 
-Rows pair up back-to-back around an enclosed hot aisle (warm glass roof and end doors); cold aisles with perforated tiles run between the pairs. Odd rows face north, even rows face south. Racks stay graphite while healthy: a faint blue strip on each face means full backup, and gold or red lids mark racks one failure from an outage or with no working feed. Azure frames mark racks protected by a lease; pale-blue server panels are a safe restart placement.
+Rows pair up back-to-back around an enclosed hot aisle (warm glass roof and end doors); cold aisles with perforated tiles run between the pairs. Odd rows face north, even rows face south. Racks stay graphite while healthy: a faint blue strip on each face means full backup, and gold or red lids mark racks one failure from an outage or with no working feed. Racks protected by a lease get an azure lid inside an azure frame, with a lock on the first rack of each run; pale-blue server panels are a safe restart placement.
+
+Close shots keep the subject clear: plain units standing in front of it fade to a ghost, the status arcs fade out near the camera, and floor labels fade wherever they would sit under a panel. Floor labels grow with distance so they stay readable from the overview.
+
+## The crew
+
+Squawk's floor staff are chunky toy seagulls in the spirit of the articulated pocket-pet prints: round body, big head, short orange bill, grey wings with black tips, stubby orange legs and flat webbed feet. They are built in code in `src/scene/Staff.tsx` (one merged geometry per body segment, instanced, matte filament shading) and they waddle: short quick steps, the body rocking over the planted foot, a head bob and a tail wag. They patrol the cold and hot aisles from the east walkway; in a hot aisle they sweat and flap. Decoration only: no clicks, no state the panels read, and they step out of any close shot they would block. They leave the cold aisle in front of Row 1 clear, because that is where the demo looks. `G` hides them.
+
+Each hot aisle has sliding doors at both ends (`src/scene/Doors.tsx`): two leaves that slide apart along the rack ends when a gull comes near and close again once it has passed.
+
+Every server panel carries two tiny LEDs at its right-hand end, a steady power light and an activity light that blinks in its own rhythm. Job nodes blink most, spares hardly at all, failed nodes go dark. They are a twinkle in close-ups and invisible from the overview.
 
 ## Design system
 
-NMC² palette: black surfaces, azure `#2b9cfc` for the product acting (selection, protection, primary action), pale blue `#c0d1f1` for safe placements, sand gold `#ddb67c` for reduced backup, and red only for failures. Healthy states stay neutral. Type is Roboto (loaded from Google Fonts, with bundled Inter as the offline fallback) at weights 300, 400 and 500, on a 11 / 12 / 13 / 17 / 20 / 28 px scale. Surfaces are square and flush to the screen edges; only controls get a 2 px radius. The only gradients are the two scrims that keep text legible over the 3D scene.
+NMC² palette: black surfaces, azure `#2b9cfc` for the product acting (selection, protection, primary action), pale blue `#c0d1f1` for safe placements, sand gold `#ddb67c` for reduced backup, and red only for failures. Healthy states stay neutral, and red is only for what has failed: a denied request shows in azure (the interlock doing its job) and the shared-cause lines are gold. Type is Roboto (loaded from Google Fonts, with bundled Inter as the offline fallback) at weights 300, 400 and 500, on a 11 / 12 / 13 / 17 / 20 / 28 px scale. Surfaces are square and flush to the screen edges; only controls get a 2 px radius. The only gradients are the two scrims that keep text legible over the 3D scene.
 
 ## Where things are
 
 | Path | What |
 | --- | --- |
-| `src/scene/` | three.js scene: hall layout, racks + nodes (instanced), facility parts, aisles and containment, feed arcs, protection frames, camera shots and controls |
+| `src/scene/` | three.js scene: hall layout, racks + nodes (instanced), facility parts, aisles and containment, feed arcs, protection frames, camera shots and controls, the seagull crew (`Staff.tsx`) |
 | `src/ui/` | HUD panels over the full-screen scene: sidebar, stat tiles, decision feed, detail card |
 | `src/store.ts` | App state. The only place data enters the view |
 | `src/model/types.ts` | Shapes the view consumes (site, world, events) |
