@@ -96,7 +96,10 @@ export type Verdict =
   | 'shared_cause'
   | 'isolated'
   | 'placement'
-  | 'info';
+  | 'info'
+  | 'plan' // an agent wrote its plan
+  | 'fixed' // an agent finished an issue
+  | 'handoff'; // an agent handed an issue to a person or another agent
 
 export type FocusTarget =
   | { kind: 'rack'; id: string }
@@ -105,7 +108,7 @@ export type FocusTarget =
   | { kind: 'racks'; ids: string[]; parts?: string[] }
   | { kind: 'overview' };
 
-export type ActorKind = 'facility' | 'scheduler' | 'cooling' | 'blast_radius';
+export type ActorKind = 'facility' | 'scheduler' | 'cooling' | 'fixer' | 'squawk';
 
 export interface DecisionEvent {
   seq: number;
@@ -116,11 +119,13 @@ export interface DecisionEvent {
   verdict: Verdict;
   reason: string;
   focus: FocusTarget;
+  type?: string; // what happened (backend EventType); the mock leaves it unset
+  subject?: string; // the node, part, job or work it is about
 }
 
 export interface JobStatus {
   id: string;
-  status: 'running' | 'stopped';
+  status: 'running' | 'stopped' | 'finished';
   nodes: number;
   restarts: number;
   crashes: number;

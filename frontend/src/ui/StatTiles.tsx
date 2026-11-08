@@ -53,7 +53,7 @@ export function StatTiles() {
       />
       <Metric
         name={job.id}
-        value={job.status === 'running' ? 'Running' : 'Stopped'}
+        value={job.status === 'running' ? 'Running' : job.status === 'finished' ? 'Finished' : 'Stopped'}
         detail={`${job.nodes.toLocaleString()} nodes · ${job.crashes} ${job.crashes === 1 ? 'crash' : 'crashes'} · ${job.restarts} ${job.restarts === 1 ? 'restart' : 'restarts'}`}
         tone={job.status === 'stopped' ? 'red' : job.crashes > 1 ? 'gold' : 'ok'}
       />
@@ -80,7 +80,7 @@ export function StatTiles() {
               ? `Protecting ${protection.racks?.length ?? 0} racks for 72 h`
               : 'No leases held'
         }
-        tone={world.deniedRequests ? 'red' : protection ? 'azure' : 'muted'}
+        tone={world.deniedRequests || protection ? 'azure' : 'muted'}
       />
     </div>
   );

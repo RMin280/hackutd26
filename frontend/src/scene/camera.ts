@@ -31,6 +31,58 @@ export const OVERVIEW_POLAR = 0.88;
 // Close-ups look down at ~48°: steep enough to see a whole rack front over the
 // 2 m racks on the other side of the 1.8 m cold aisle.
 const CLOSE_POLAR = 0.72;
+// Runs of racks are framed from higher up, so the row in front (or the power room in
+// front of Row 1) stays out of the bottom of the frame.
+const RACKS_POLAR = 0.62;
+// How much of the row to keep around a single rack or node, in metres either side:
+// enough neighbours to see where it sits, not so many that a node shrinks to a dot.
+const RACK_CONTEXT = 1.6;
+const NODE_CONTEXT = 2.1;
+
+// ---------- foreground test for close shots ----------
+
+/** Camera-to-target distance below which a shot counts as close. */
+export const CLOSE_SHOT = 24;
+const fgTarget = new THREE.Vector3();
+
+/**
+ * True when something at `center` (footprint radius `radius`) stands between the camera and
+ * what it is looking at, in a close shot: the power room in front of Row 1, a gull walking past
+ * the lens. Overview and wide shots never count.
+ */
+export function inForeground(
+  camera: THREE.Camera,
+  controls: { getTarget?: (out: THREE.Vector3) => THREE.Vector3; distance?: number } | null | undefined,
+  center: THREE.Vector3,
+  radius: number,
+): boolean {
+  if (!controls?.getTarget || (controls.distance ?? Infinity) > CLOSE_SHOT) return false;
+  controls.getTarget(fgTarget);
+  const dx = fgTarget.x - camera.position.x;
+  const dz = fgTarget.z - camera.position.z;
+  const dT = Math.hypot(dx, dz);
+  if (dT < 0.5) return false;
+  // how far along the (horizontal) view the thing's far edge reaches, compared with the subject
+  const along = ((center.x - camera.position.x) * dx + (center.z - camera.position.z) * dz) / dT + radius;
+  return along > 0 && along < dT - 2.5;
+}
+
+/** The part of the canvas not covered by HUD panels (the `.scene-frame` grid cell). */
+export function readFrame(canvas: HTMLCanvasElement): Frame {
+  const c = canvas.getBoundingClientRect();
+  const r = document.querySelector('.scene-frame')?.getBoundingClientRect();
+  if (!r || r.width < 200 || r.height < 140) {
+    return { left: 0, top: 0, right: c.width, bottom: c.height, width: c.width, height: c.height };
+  }
+  return {
+    left: r.left - c.left,
+    top: r.top - c.top,
+    right: r.right - c.left,
+    bottom: r.bottom - c.top,
+    width: c.width,
+    height: c.height,
+  };
+}
 
 // Look at a row's front: from the south for south-facing rows, from the north otherwise (slightly from the east).
 const azimuthForFacing = (facing: number) => (facing > 0 ? 0.35 : Math.PI - 0.35);
@@ -62,23 +114,29 @@ export function shotFor(site: Site, parts: Record<string, PartBox>, t: FocusTarg
     case 'overview':
       return { kind: 'fit', points: hallPoints(parts), dir: dirFrom(OVERVIEW_AZIMUTH, OVERVIEW_POLAR) };
     case 'rack': {
-      // the rack with a little of its neighbours, seen from its front
+      // the rack with a couple of neighbours each side, seen from its front
       const [x, , z] = rackBase(site, t.id);
       const facing = rowFacing(site.racks[t.id].row);
       return {
         kind: 'fit',
-        points: boxCorners(new THREE.Vector3(x - 0.95, 0, z - 0.7), new THREE.Vector3(x + 0.95, RACK.h + 0.25, z + 0.7)),
+        points: boxCorners(
+          new THREE.Vector3(x - RACK_CONTEXT, 0, z - 0.7),
+          new THREE.Vector3(x + RACK_CONTEXT, RACK.h + 0.25, z + 0.7),
+        ),
         dir: dirFrom(azimuthForFacing(facing), CLOSE_POLAR),
       };
     }
     case 'node': {
-      // the node's whole rack, so you can see where it sits; the node itself is lit/pulsing
+      // the node's rack in its stretch of row, so you can see where it sits; the node itself pulses
       const n = site.nodes[t.id];
       const [x, , z] = rackBase(site, n.rack);
       const facing = rowFacing(n.row);
       return {
         kind: 'fit',
-        points: boxCorners(new THREE.Vector3(x - 0.7, 0, z - 0.6), new THREE.Vector3(x + 0.7, RACK.h + 0.2, z + 0.6)),
+        points: boxCorners(
+          new THREE.Vector3(x - NODE_CONTEXT, 0, z - 0.75),
+          new THREE.Vector3(x + NODE_CONTEXT, RACK.h + 0.2, z + 0.75),
+        ),
         dir: dirFrom(azimuthForFacing(facing), CLOSE_POLAR),
       };
     }
@@ -109,7 +167,7 @@ export function shotFor(site: Site, parts: Record<string, PartBox>, t: FocusTarg
         box.expandByPoint(new THREE.Vector3(b.pos[0] + b.size[0] / 2, b.size[1], b.pos[2] + b.size[2] / 2));
       }
       box.expandByVector(new THREE.Vector3(0.8, 0, 0.8));
-      return { kind: 'fit', points: boxCorners(box.min, box.max), dir: dirFrom(azimuthForFacing(facing >= 0 ? 1 : -1), 0.85) };
+      return { kind: 'fit', points: boxCorners(box.min, box.max), dir: dirFrom(azimuthForFacing(facing >= 0 ? 1 : -1), RACKS_POLAR) };
     }
   }
 }

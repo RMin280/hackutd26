@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
+import type CameraControlsImpl from 'camera-controls';
 import * as THREE from 'three';
 import { useStore } from '../store';
 import { C, STATE_COLOR } from '../theme';
@@ -8,11 +9,16 @@ import { label, partTypeName } from '../mock/site';
 import { stateText } from '../ui/format';
 import type { PartBox } from './layout';
 import { useUnprotectedParts } from './hooks';
+import { inForeground } from './camera';
 
 const noRaycast = () => null;
 
 // Neighbouring units (CDU-3 next to CDU-4, PDU A next to PDU B) get tags at two heights so they don't overlap.
 const tagStagger = (id: string) => (/[02468]$|-b$/.test(id) ? 0.55 : 0);
+
+// In close shots, plain units standing in front of what the camera looks at (the power
+// room in front of Row 1, say) fade to a ghost so they don't fill the foreground.
+const FADED = 0.12;
 
 function PulseRing({ size, color }: { size: [number, number, number]; color: string }) {
   const ref = useRef<THREE.Mesh>(null!);
@@ -51,9 +57,28 @@ function PartMesh({ id, box }: { id: string; box: PartBox }) {
   const tagTone = state === 'failed' ? 'red' : state !== 'ok' || unprotected ? 'gold' : 'azure';
   const body = selected || hovered ? C.partBodyHover : C.partBody;
 
+  const bodyMesh = useRef<THREE.Mesh>(null!);
+  const bodyMat = useRef<THREE.MeshStandardMaterial>(null!);
+  const capMat = useRef<THREE.MeshBasicMaterial>(null!);
+  const center = useMemo(() => new THREE.Vector3(box.pos[0], h / 2, box.pos[2]), [box, h]);
+  const keepSolid = selected || cause || state !== 'ok' || unprotected;
+  useFrame(({ camera, controls }, dt) => {
+    const m = bodyMat.current;
+    if (!m) return;
+    const want = !keepSolid && inForeground(camera, controls as CameraControlsImpl | null, center, Math.max(w, d) / 2) ? FADED : 1;
+    if (Math.abs(m.opacity - want) < 0.004) return;
+    m.opacity += (want - m.opacity) * (1 - Math.exp(-dt * 8));
+    if (Math.abs(m.opacity - want) < 0.004) m.opacity = want;
+    m.depthWrite = m.opacity > 0.98;
+    capMat.current.opacity = m.opacity;
+    // a ghosted unit must not catch clicks meant for the racks behind it
+    bodyMesh.current.raycast = m.opacity < 0.5 ? noRaycast : THREE.Mesh.prototype.raycast;
+  });
+
   return (
     <group position={box.pos}>
       <mesh
+        ref={bodyMesh}
         position={[0, h / 2, 0]}
         onPointerMove={(e: ThreeEvent<PointerEvent>) => {
           e.stopPropagation();
@@ -78,11 +103,11 @@ function PartMesh({ id, box }: { id: string; box: PartBox }) {
         }}
       >
         <boxGeometry args={[w, h, d]} />
-        <meshStandardMaterial color={body} roughness={0.65} metalness={0.3} />
+        <meshStandardMaterial ref={bodyMat} color={body} roughness={0.65} metalness={0.3} transparent />
       </mesh>
       <mesh position={[0, h + 0.012, 0]} raycast={noRaycast}>
         <boxGeometry args={[w, 0.025, d]} />
-        <meshBasicMaterial color={capColor} toneMapped={false} />
+        <meshBasicMaterial ref={capMat} color={capColor} toneMapped={false} transparent />
       </mesh>
       {(unprotected || state !== 'ok') && <PulseRing size={box.size} color={state === 'failed' ? C.red : C.gold} />}
       {selected && <SelectionEdges size={box.size} />}

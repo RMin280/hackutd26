@@ -1,4 +1,4 @@
-# Blast Radius · control-room view
+# Squawk · control-room view
 
 3D floor map of the demo hall (three.js via React Three Fiber) with a dark dashboard shell.
 
@@ -18,7 +18,8 @@ npm run build      # typecheck + production build
 | `P` | Play / pause (one step every ~4 s) |
 | `R` | Reset the scenario |
 | `Esc` | Close the card, then back to the overview |
-| `1` / `2` | Naive scheduler / Blast Radius mode |
+| `1` / `2` | Naive scheduler / Squawk mode |
+| `G` | Hide / show the seagull crew |
 
 Moving around the hall (map-style): drag to pan along the floor, right-drag to rotate, scroll to zoom toward the cursor, `WASD` to move, `Q`/`E` to turn, hold `Shift` to go faster.
 
@@ -28,24 +29,51 @@ Every panel collapses with its chevron: the sidebar and the decision feed fold i
 
 ## The hall
 
-Rows pair up back-to-back around an enclosed hot aisle (warm glass roof and end doors); cold aisles with perforated tiles run between the pairs. Odd rows face north, even rows face south. Racks stay graphite while healthy: a faint blue strip on each face means full backup, and gold or red lids mark racks one failure from an outage or with no working feed. Azure frames mark racks protected by a lease; pale-blue server panels are a safe restart placement.
+Rows pair up back-to-back around an enclosed hot aisle (warm glass roof and end doors); cold aisles with perforated tiles run between the pairs. Odd rows face north, even rows face south. Racks stay graphite while healthy: a faint blue strip on each face means full backup, and gold or red lids mark racks one failure from an outage or with no working feed. Racks protected by a lease get an azure lid inside an azure frame, with a lock on the first rack of each run; pale-blue server panels are a safe restart placement.
+
+Close shots keep the subject clear: plain units standing in front of it fade to a ghost, the status arcs fade out near the camera, and floor labels fade wherever they would sit under a panel. Floor labels grow with distance so they stay readable from the overview.
+
+## The crew
+
+Squawk's floor staff are chunky toy seagulls in the spirit of the articulated pocket-pet prints: round body, big head, short orange bill, grey wings with black tips, stubby orange legs and flat webbed feet. They are built in code in `src/scene/Staff.tsx` (one merged geometry per body segment, instanced, matte filament shading) and they waddle: short quick steps, the body rocking over the planted foot, a head bob and a tail wag. They patrol the cold and hot aisles from the east walkway; in a hot aisle they sweat and flap. Decoration only: no clicks, no state the panels read, and they step out of any close shot they would block. They leave the cold aisle in front of Row 1 clear, because that is where the demo looks. `G` hides them.
+
+Each hot aisle has sliding doors at both ends (`src/scene/Doors.tsx`): two leaves that slide apart along the rack ends when a gull comes near and close again once it has passed.
+
+Every server panel carries two tiny LEDs at its right-hand end, a steady power light and an activity light that blinks in its own rhythm. Job nodes blink most, spares hardly at all, failed nodes go dark. They are a twinkle in close-ups and invisible from the overview.
 
 ## Design system
 
-NMC² palette: black surfaces, azure `#2b9cfc` for the product acting (selection, protection, primary action), pale blue `#c0d1f1` for safe placements, sand gold `#ddb67c` for reduced backup, and red only for failures. Healthy states stay neutral. Type is Roboto (loaded from Google Fonts, with bundled Inter as the offline fallback) at weights 300, 400 and 500, on a 11 / 12 / 13 / 17 / 20 / 28 px scale. Surfaces are square and flush to the screen edges; only controls get a 2 px radius. The only gradients are the two scrims that keep text legible over the 3D scene.
+NMC² palette: black surfaces, azure `#2b9cfc` for the product acting (selection, protection, primary action), pale blue `#c0d1f1` for safe placements, sand gold `#ddb67c` for reduced backup, and red only for failures. Healthy states stay neutral, and red is only for what has failed: a denied request shows in azure (the interlock doing its job) and the shared-cause lines are gold. Type is Roboto (loaded from Google Fonts, with bundled Inter as the offline fallback) at weights 300, 400 and 500, on a 11 / 12 / 13 / 17 / 20 / 28 px scale. Surfaces are square and flush to the screen edges; only controls get a 2 px radius. The only gradients are the two scrims that keep text legible over the 3D scene.
 
 ## Where things are
 
 | Path | What |
 | --- | --- |
-| `src/scene/` | three.js scene: hall layout, racks + nodes (instanced), facility parts, aisles and containment, feed arcs, protection frames, camera shots and controls |
+| `src/scene/` | three.js scene: hall layout, racks + nodes (instanced), facility parts, aisles and containment, feed arcs, protection frames, camera shots and controls, the seagull crew (`Staff.tsx`) |
 | `src/ui/` | HUD panels over the full-screen scene: sidebar, stat tiles, decision feed, detail card |
 | `src/store.ts` | App state. The only place data enters the view |
 | `src/model/types.ts` | Shapes the view consumes (site, world, events) |
+| `src/live/` | **Live mode.** Connection to the SpacetimeDB backend (`connection.ts`) and the row → `Site`/`World` mapping (`mapping.ts`) |
+| `src/module_bindings/` | Generated by `npm run bindings` from `../spacetimedb`. A placeholder until then |
 | `src/mock/` | **Mock backend.** Demo hall generator, a stand-in for guard / diagnose / placement, and the scripted "big job failure" scenario |
 
-## Mock vs real backend
+## Live mode (SpacetimeDB)
 
-The view holds no safety logic: it renders what `src/store.ts` holds. Until the SpacetimeDB backend exists, `src/mock/` computes margins, diagnosis, placement and lease checks and replays DESIGN.md §10.2 in both modes. When the backend lands, replace the scenario player in `store.ts` with a subscription that writes the same `World` and `DecisionEvent` shapes, and delete `src/mock/engine.ts`.
+The view holds no safety logic: it renders what `src/store.ts` holds. By default `src/mock/` fills it, as before. In live mode the SpacetimeDB backend in `../spacetimedb` does: the view subscribes to its tables, and Space, `R`, `1`/`2` and step clicks call the backend's scenario reducers (`scenario_next`, `scenario_start`, `scenario_goto`) instead of the mock.
 
-IDs the backend should keep so the scenario lines up: `cdu-3` cools `rack-r1-11`…`rack-r1-15` with `cdu-4` as backup (and `cdu-3` backs nobody); `node-417`…`node-424` live in `rack-r1-12`; `job-train-1` runs on the first 1,000 nodes (Rows 1–8); 160 free spares sit in Rows 9–10.
+From the repo root, `bash dev.sh up` does all of this (with `bash dev.sh server` running in another terminal). By hand:
+
+```
+# once: backend running and published (see ../spacetimedb/README.md)
+cd frontend
+npm install                 # adds the spacetimedb SDK
+npm run bindings            # spacetime generate -> src/module_bindings (rerun when tables change)
+cp .env.example .env.local  # VITE_SPACETIMEDB_URI=http://localhost:3000, VITE_SPACETIMEDB_DB=squawk
+npm run dev
+```
+
+On first connect the browser gets its own SpacetimeDB identity (kept in localStorage) and registers itself as a shift lead, which is what the presenter controls need. A fresh database shows the diagnostics test bed (five incidents for testing agents); press Space to run the demo scenario from a clean hall, or `R` for a clean hall in the current mode. Delete `.env.local` (or empty `VITE_SPACETIMEDB_URI`) to go back to the mock.
+
+`spacetimedb/test/frontend-contract.test.ts` runs every scenario step on the backend, maps the rows with `src/live/mapping.ts`, and checks the result against `src/mock`, so the two stay in step. If you change the mock scenario or the types, run `npm test` in `../spacetimedb`.
+
+IDs the backend keeps so the scenario lines up: `cdu-3` cools `rack-r1-11`…`rack-r1-15` with `cdu-4` as backup (and `cdu-3` backs nobody); `node-417`…`node-424` live in `rack-r1-12`; `job-train-1` runs on the first 1,000 nodes (Rows 1–8); 160 free spares sit in Rows 9–10.

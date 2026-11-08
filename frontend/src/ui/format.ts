@@ -20,12 +20,18 @@ export const ownerText = (o: Owner) =>
 export const VERDICT: Record<Verdict, { text: string; tone: Tone }> = {
   allow: { text: 'Allowed', tone: 'azure' },
   warn: { text: 'Warning', tone: 'gold' },
-  deny: { text: 'Denied', tone: 'red' },
+  // A refusal is the product doing its job (the interlock held), so it speaks in azure; red is for failures.
+  deny: { text: 'Denied', tone: 'azure' },
   failure: { text: 'Failure', tone: 'red' },
   shared_cause: { text: 'Shared cause', tone: 'gold' },
   isolated: { text: 'Isolated', tone: 'ice' },
   placement: { text: 'Placed', tone: 'ice' },
   info: { text: 'Info', tone: 'muted' },
+  // The fixer agent's own rows: its plan and a finished issue are the product acting (azure);
+  // a hand-off needs a person (gold).
+  plan: { text: 'Plan', tone: 'azure' },
+  fixed: { text: 'Fixed', tone: 'azure' },
+  handoff: { text: 'Handed off', tone: 'gold' },
 };
 
 export const clock = (min: number) => {

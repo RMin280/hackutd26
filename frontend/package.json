@@ -1,5 +1,5 @@
 {
-  "name": "blast-radius-frontend",
+  "name": "squawk-frontend",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "bindings": "spacetime generate --lang typescript --out-dir src/module_bindings --module-path ../spacetimedb"
   },
   "dependencies": {
     "@fontsource/inter": "^5.1.0",
@@ -16,6 +17,7 @@
     "camera-controls": "^2.10.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "spacetimedb": "^2.11.0",
     "three": "^0.169.0",
     "zustand": "^4.5.5"
   },

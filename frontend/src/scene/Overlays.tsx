@@ -1,27 +1,28 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
+import { useFrame } from '@react-three/fiber';
 import { Line, QuadraticBezierLine } from '@react-three/drei';
+import * as THREE from 'three';
 import { useStore } from '../store';
 import { C } from '../theme';
 import { NODE, RACK, nodeCenter, posX, rackBase, rowZ, type PartBox, type Vec3 } from './layout';
 import { SelectionEdges } from './Parts';
-import { useUnprotectedParts } from './hooks';
+import { useProtectedRacks, useUnprotectedParts } from './hooks';
 import { makeLockTexture } from './labels';
 
 const noRaycast = () => null;
 
 // ---------- protection leases: one frame per protected run of racks ----------
 
+// The lock sits on the lid of the first rack in each protected run, nearly as wide as the rack.
+const LOCK_SIZE = 0.52;
+
 export function ProtectedZones() {
   const site = useStore((s) => s.site);
-  const leases = useStore((s) => s.world.leases);
-  const now = useStore((s) => s.world.now);
+  const protectedRacks = useProtectedRacks();
   const lock = useMemo(makeLockTexture, []);
   useEffect(() => () => lock.dispose(), [lock]);
 
   const runs = useMemo(() => {
-    const protectedRacks = new Set(
-      leases.filter((l) => l.type === 'protection' && l.start <= now && now < l.end).flatMap((l) => l.racks ?? []),
-    );
     const out: { row: number; from: number; to: number }[] = [];
     for (let row = 1; row <= 10; row++) {
       let start = 0;
@@ -36,7 +37,7 @@ export function ProtectedZones() {
       }
     }
     return out;
-  }, [leases, now, site]);
+  }, [protectedRacks, site]);
 
   if (!runs.length) return null;
   const y = RACK.h + 0.03;
@@ -56,9 +57,9 @@ export function ProtectedZones() {
         ];
         return (
           <group key={`${row}-${from}`}>
-            <Line points={pts} color={C.azure} lineWidth={1.5} transparent opacity={0.9} raycast={noRaycast} />
+            <Line points={pts} color={C.azure} lineWidth={2} transparent opacity={0.95} raycast={noRaycast} />
             <mesh position={[posX(from), y + 0.005, rowZ(row)]} rotation-x={-Math.PI / 2} renderOrder={3} raycast={noRaycast}>
-              <planeGeometry args={[0.44, 0.44]} />
+              <planeGeometry args={[LOCK_SIZE, LOCK_SIZE]} />
               <meshBasicMaterial map={lock} transparent depthWrite={false} toneMapped={false} />
             </mesh>
           </group>
@@ -103,6 +104,46 @@ interface Arc {
   color: string;
   dashed?: boolean;
   width?: number;
+  /** Status arcs fade out when the camera comes close; the lids already carry the message there. */
+  fades?: boolean;
+}
+
+// Status arcs are gone within FADE_NEAR metres of the camera and fully back by FADE_FAR,
+// so close-ups don't fill with dashes the size of a rack.
+const FADE_NEAR = 9;
+const FADE_FAR = 16;
+const ARC_OPACITY = 0.9;
+
+function ArcLine({ a }: { a: Arc }) {
+  // drei's line object (a three-stdlib Line2); only its material opacity and visibility are touched
+  const ref = useRef<any>(null);
+  const dist = Math.hypot(a.to[0] - a.from[0], a.to[2] - a.from[2]);
+  const mid: Vec3 = [(a.from[0] + a.to[0]) / 2, Math.max(a.from[1], a.to[1]) + 0.5 + dist * 0.16, (a.from[2] + a.to[2]) / 2];
+  const probes = useMemo(() => [a.from, mid, a.to].map((p) => new THREE.Vector3(...p)), [a.from, a.to, mid[0], mid[1], mid[2]]);
+  useFrame(({ camera }) => {
+    const line = ref.current;
+    if (!line || !a.fades) return;
+    const d = Math.min(...probes.map((p) => camera.position.distanceTo(p)));
+    const t = THREE.MathUtils.smoothstep(d, FADE_NEAR, FADE_FAR);
+    line.material.opacity = ARC_OPACITY * t;
+    line.visible = t > 0.01;
+  });
+  return (
+    <QuadraticBezierLine
+      ref={ref}
+      start={a.from}
+      end={a.to}
+      mid={mid}
+      color={a.color}
+      lineWidth={a.width ?? 1.2}
+      dashed={a.dashed}
+      dashSize={0.25}
+      gapSize={0.15}
+      transparent
+      opacity={ARC_OPACITY}
+      raycast={noRaycast}
+    />
+  );
 }
 
 function partTop(layout: Record<string, PartBox>, id: string): Vec3 {
@@ -132,16 +173,17 @@ export function FeedLines({ layout }: { layout: Record<string, PartBox> }) {
       for (const p of m.unprotected) {
         const t = site.parts[p].type;
         if (t !== 'cdu' && t !== 'pdu') continue;
-        out.push({ key: `u-${rid}-${p}`, from: partTop(layout, p), to: rackTop(rid), color: C.gold, dashed: true });
+        out.push({ key: `u-${rid}-${p}`, from: partTop(layout, p), to: rackTop(rid), color: C.gold, dashed: true, fades: true });
       }
     }
 
-    // 2. Diagnosis: the shared cause and the racks it cools or powers.
+    // 2. Diagnosis: the shared cause and the racks it cools or powers. Gold, like the degraded
+    //    unit and the at-risk nodes: red stays reserved for what has actually failed.
     const cause = world.diagnosis?.cause;
     if (cause) {
       for (const rid of site.downstream[cause]) {
         if (site.parts[cause].type === 'cdu' && site.racks[rid].coolingFeeds[0][0] !== cause) continue;
-        out.push({ key: `c-${rid}`, from: partTop(layout, cause), to: rackTop(rid), color: C.red, width: 1.6 });
+        out.push({ key: `c-${rid}`, from: partTop(layout, cause), to: rackTop(rid), color: C.gold, width: 1.6, fades: true });
       }
     }
 
@@ -166,26 +208,9 @@ export function FeedLines({ layout }: { layout: Record<string, PartBox> }) {
 
   return (
     <group>
-      {arcs.map((a) => {
-        const dist = Math.hypot(a.to[0] - a.from[0], a.to[2] - a.from[2]);
-        const mid: Vec3 = [(a.from[0] + a.to[0]) / 2, Math.max(a.from[1], a.to[1]) + 0.5 + dist * 0.16, (a.from[2] + a.to[2]) / 2];
-        return (
-          <QuadraticBezierLine
-            key={a.key}
-            start={a.from}
-            end={a.to}
-            mid={mid}
-            color={a.color}
-            lineWidth={a.width ?? 1.2}
-            dashed={a.dashed}
-            dashSize={0.25}
-            gapSize={0.15}
-            transparent
-            opacity={0.9}
-            raycast={noRaycast}
-          />
-        );
-      })}
+      {arcs.map((a) => (
+        <ArcLine key={a.key} a={a} />
+      ))}
     </group>
   );
 }
