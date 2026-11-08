@@ -13,7 +13,7 @@
 
   --text: #f5f5f5;
   --text-2: rgba(245, 245, 245, 0.72);
-  --text-3: rgba(245, 245, 245, 0.46);
+  --text-3: rgba(245, 245, 245, 0.55); /* 5.8:1 on the surface: AA for the 11px labels that use it */
 
   --azure: #2b9cfc;
   --blue: #0066cc;
@@ -295,11 +295,17 @@ ol, ul { list-style: none; }
 .decision-reason { font-size: 12px; line-height: 1.5; color: var(--text-2); }
 
 /* ---------- in-scene callouts and tooltip ---------- */
+/* Sizes here are mirrored in scene/Parts.tsx (PartTags), which lays the tags out in screen space. */
 .scene-tag {
   display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
   padding: 4px 8px; background: rgba(10, 10, 11, 0.92); border: 1px solid var(--line-strong);
   font: 500 12px/16px 'Roboto', 'Inter', sans-serif; color: var(--text);
 }
+/* Pulled back, a tag drops to its name, then to its mark alone: still a thing to look at, no pile-up. */
+.scene-tag[data-lod='name'] .scene-tag-sub { display: none; }
+.scene-tag[data-lod='dot'] { padding: 0; gap: 0; background: none; border-color: transparent; }
+.scene-tag[data-lod='dot'] .scene-tag-name, .scene-tag[data-lod='dot'] .scene-tag-sub { display: none; }
+.scene-tag[data-lod='dot'] .mark { width: 8px; height: 8px; box-shadow: 0 0 0 1px rgba(5, 5, 5, 0.9); }
 /* The Nemotron fixer at work on a software fix (scene/FixerPopups.tsx). */
 .fix-pop {
   width: 260px; padding: 8px 10px 9px; background: rgba(10, 10, 11, 0.94);

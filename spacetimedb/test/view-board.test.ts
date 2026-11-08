@@ -231,6 +231,9 @@ test('agent cards: one per agent, newest row sets the state, counts of fixes and
   );
   assert.equal(planned[0].model, 'nvidia/nemotron-3-super-120b-a12b via OpenRouter');
   assert.equal(card.model, undefined, 'no plan row with a model: none shown');
+  // The update agent (its own kind since the updater popups) keeps its card.
+  const updater = agentCards([fixerRow({ actor: 'update-agent', actorKind: 'updater', type: 'agent', title: 'Waiting on SQK-SIM-2026-0419', subject: 'SQK-SIM-2026-0419', data: JSON.stringify({ status: 'waiting' }) })]);
+  assert.deepEqual([updater[0]?.actor, updater[0]?.kind, updater[0]?.state], ['update-agent', 'updater', 'waiting']);
 });
 
 test('offline the mock’s leases still read as items', () => {

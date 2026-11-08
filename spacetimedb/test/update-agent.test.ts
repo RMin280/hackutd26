@@ -41,6 +41,6 @@ test('the update agent writes its own rows to the feed, attributed to it', () =>
   recordEvent(s, UPD, 'agent_plan', 'node-1028', 'Plan', JSON.stringify({ steps: [{ tool: 'book_wave' }] }));
   const row = s.decisions[s.decisions.length - 1];
   assert.equal(row.actor, 'update-agent');
-  assert.equal(row.actorKind, 'scheduler');
+  assert.equal(row.actorKind, 'updater');
   assert.equal(row.type, 'agent_plan');
 });

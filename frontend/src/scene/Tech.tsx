@@ -18,6 +18,8 @@ const noRaycast = () => null;
 const DOT_GAP = 0.36; // metres between route dots
 const MAX_DOTS = 256;
 const SPARKS = 40;
+const SPARK_HOT = new THREE.Color('#fff3c8'); // just off the metal
+const SPARK_COOL = new THREE.Color('#ff7a2e'); // a moment later
 const RING_SEGMENTS = 64;
 
 interface Fx {
@@ -54,9 +56,11 @@ function buildFx(): Fx {
   fill.renderOrder = 3;
   track.visible = fill.visible = false;
 
-  // Sparks off the part being worked on.
+  // Sparks off the part being worked on: hot metal, white-gold when they leave and orange as
+  // they cool. Warm on purpose, so they never read as the pale-blue sweat a gull flicks off in a
+  // hot aisle (Staff.tsx), and brighter than the sand gold that marks reduced backup.
   const sparkGeo = own(new THREE.SphereGeometry(0.024, 6, 4));
-  const sparkMat = own(new THREE.MeshBasicMaterial({ color: C.azure, toneMapped: false }));
+  const sparkMat = own(new THREE.MeshBasicMaterial({ color: C.white, toneMapped: false }));
   const sparks = add(new THREE.InstancedMesh(sparkGeo, sparkMat, SPARKS));
   sparks.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   const pool = Array.from({ length: SPARKS }, () => ({ p: new THREE.Vector3(), v: new THREE.Vector3(), age: 1, life: 1 }));
@@ -67,6 +71,8 @@ function buildFx(): Fx {
   const q = new THREE.Quaternion();
   const sc = new THREE.Vector3();
   const zero = new THREE.Matrix4().makeScale(0, 0, 0);
+  const tint = new THREE.Color();
+  for (let j = 0; j < SPARKS; j++) sparks.setColorAt(j, tint.set(SPARK_HOT));
 
   const update = (tech: TechBrain, t: number, dt: number) => {
     const g = tech.gull;
@@ -126,9 +132,12 @@ function buildFx(): Fx {
       s.age += dt;
       s.v.y -= 6 * dt;
       s.p.addScaledVector(s.v, dt);
-      sparks.setMatrixAt(j, m.compose(s.p, q.identity(), sc.setScalar(Math.max(0, 1 - s.age / s.life))));
+      const k = Math.min(1, s.age / s.life);
+      sparks.setMatrixAt(j, m.compose(s.p, q.identity(), sc.setScalar(1 - k)));
+      sparks.setColorAt(j, tint.lerpColors(SPARK_HOT, SPARK_COOL, k * k));
     });
     sparks.instanceMatrix.needsUpdate = true;
+    if (sparks.instanceColor) sparks.instanceColor.needsUpdate = true;
   };
 
   return {

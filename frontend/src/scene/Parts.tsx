@@ -16,6 +16,9 @@ const noRaycast = () => null;
 // Neighbouring units (CDU-3 next to CDU-4, PDU A next to PDU B) get tags at two heights so they don't overlap.
 const tagStagger = (id: string) => (/[02468]$|-b$/.test(id) ? 0.55 : 0);
 
+/** Where a unit's callout hangs: above its top, staggered for neighbours. */
+const tagAnchor = (id: string, box: PartBox) => new THREE.Vector3(box.pos[0], box.size[1] + 0.5 + tagStagger(id), box.pos[2]);
+
 // In close shots, plain units standing in front of what the camera looks at (the power
 // room in front of Row 1, say) fade to a ghost so they don't fill the foreground.
 const FADED = 0.12;
@@ -51,10 +54,6 @@ function PartMesh({ id, box }: { id: string; box: PartBox }) {
   const type = site.parts[id].type;
   const [w, h, d] = box.size;
   const capColor = state !== 'ok' ? STATE_COLOR[state] : unprotected ? C.gold : C.partCap;
-  // Callout tags only where they help: problems, the unit a rack now depends on, and the selection.
-  const headUnit = type === 'cdu' || type === 'pdu';
-  const showTag = selected || cause || state !== 'ok' || (unprotected && headUnit);
-  const tagTone = state === 'failed' ? 'red' : state !== 'ok' || unprotected ? 'gold' : 'azure';
   const body = selected || hovered ? C.partBodyHover : C.partBody;
 
   const bodyMesh = useRef<THREE.Mesh>(null!);
@@ -111,19 +110,155 @@ function PartMesh({ id, box }: { id: string; box: PartBox }) {
       </mesh>
       {(unprotected || state !== 'ok') && <PulseRing size={box.size} color={state === 'failed' ? C.red : C.gold} />}
       {selected && <SelectionEdges size={box.size} />}
-      {showTag && (
-        <Html position={[0, h + 0.5 + tagStagger(id), 0]} center zIndexRange={[1, 0]} pointerEvents="none">
-          <div className="scene-tag">
-            <span className={`mark tone-${tagTone}`} aria-hidden />
-            {label(id)}
-            {state !== 'ok' ? (
-              <span className={`scene-tag-sub tone-${tagTone}`}>{stateText(state)}</span>
-            ) : unprotected ? (
-              <span className="scene-tag-sub tone-gold">Only working feed</span>
-            ) : null}
+    </group>
+  );
+}
+
+// ---------- callouts ----------
+//
+// A tag over each unit that needs a look: a failed or degraded unit, the diagnosed cause, the
+// one feed a rack now hangs on, the selection. They are DOM (drei's Html) and keep their pixel
+// size as the camera pulls back, so left alone they pile up over neighbouring units. Each frame
+// the tags are placed in screen space, most important first, and one that would land on a tag
+// already placed drops a level: the whole callout, the name alone, then only its mark. Far
+// enough out that a unit is a few pixels wide, nothing gets more than a name, then a mark.
+
+type TagLevel = 0 | 1 | 2; // mark only · name · name + state
+const LOD = ['dot', 'name', 'full'] as const;
+
+interface TagSpec {
+  id: string;
+  name: string;
+  sub: string | null;
+  tone: 'red' | 'gold' | 'azure';
+  anchor: THREE.Vector3;
+  priority: number;
+}
+
+// The tag's box in CSS pixels, mirroring .scene-tag in styles.css.
+const TAG_PAD = 8;
+const TAG_MARK = 6;
+const TAG_GAP = 8;
+const TAG_H = 16 + 2 * 4 + 2; // line height, padding, border
+const DOT = 10; // the mark alone, with its outline
+const PROMOTE_MARGIN = 12; // clearance a tag needs before it grows back, so it doesn't flicker
+// Pixels per metre at the unit, below which text is a callout for a speck. Two thresholds each
+// way for the same reason.
+const NAME_BELOW = 20;
+const NAME_ABOVE = 24;
+const DOT_BELOW = 11;
+const DOT_ABOVE = 14;
+
+let measurer: CanvasRenderingContext2D | null | undefined;
+function textWidth(text: string, font: string, spacingEm = 0): number {
+  if (measurer === undefined) measurer = document.createElement('canvas').getContext('2d');
+  if (!measurer) return 7 * text.length;
+  measurer.font = font;
+  const px = parseFloat(font) || 12;
+  return measurer.measureText(text).width + spacingEm * px * Math.max(0, [...text].length - 1);
+}
+
+const TAG_FONT = '500 12px Roboto, Inter, sans-serif';
+const SUB_FONT = '500 11px Roboto, Inter, sans-serif';
+
+function tagWidth(t: TagSpec, level: TagLevel): number {
+  if (level === 0) return DOT;
+  let w = 2 * TAG_PAD + 2 + TAG_MARK + TAG_GAP + textWidth(t.name, TAG_FONT);
+  if (level === 2 && t.sub) w += TAG_GAP + textWidth(t.sub.toUpperCase(), SUB_FONT, 0.12);
+  return w;
+}
+
+interface Rect {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+const rectAt = (t: TagSpec, level: TagLevel, cx: number, cy: number): Rect => {
+  const w = tagWidth(t, level);
+  const h = level === 0 ? DOT : TAG_H;
+  return { x0: cx - w / 2, y0: cy - h / 2, x1: cx + w / 2, y1: cy + h / 2 };
+};
+
+const overlaps = (a: Rect, b: Rect, margin: number) => a.x0 < b.x1 + margin && b.x0 < a.x1 + margin && a.y0 < b.y1 + margin && b.y0 < a.y1 + margin;
+
+const projected = new THREE.Vector3();
+
+function PartTags({ layout }: { layout: Record<string, PartBox> }) {
+  const site = useStore((s) => s.site);
+  const partState = useStore((s) => s.world.partState);
+  const cause = useStore((s) => s.world.diagnosis?.cause);
+  const selected = useStore((s) => (s.selection?.kind === 'part' ? s.selection.id : null));
+  const unprotected = useUnprotectedParts();
+
+  // Callouts only where they help: problems, the unit a rack now depends on, and the selection.
+  const specs = useMemo(() => {
+    const out: TagSpec[] = [];
+    for (const id of site.partOrder) {
+      const type = site.parts[id].type;
+      const state = partState[id];
+      const only = unprotected.has(id);
+      const headUnit = type === 'cdu' || type === 'pdu';
+      if (!(selected === id || cause === id || state !== 'ok' || (only && headUnit))) continue;
+      out.push({
+        id,
+        name: label(id),
+        sub: state !== 'ok' ? stateText(state) : only ? 'Only working feed' : null,
+        tone: state === 'failed' ? 'red' : state !== 'ok' || only ? 'gold' : 'azure',
+        anchor: tagAnchor(id, layout[id]),
+        priority: selected === id ? 5 : state === 'failed' ? 4 : cause === id ? 3 : state !== 'ok' ? 2 : 1,
+      });
+    }
+    return out.sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id));
+  }, [site, partState, cause, selected, unprotected, layout]);
+
+  const [levels, setLevels] = useState<Record<string, TagLevel>>({});
+  const current = useRef(levels);
+
+  useFrame(({ camera, size }) => {
+    const cam = camera as THREE.PerspectiveCamera;
+    const pxAtOneMetre = size.height / (2 * Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2));
+    const was = current.current;
+    const next: Record<string, TagLevel> = {};
+    const placed: Rect[] = [];
+    let changed = false;
+    for (const t of specs) {
+      const cur = was[t.id] ?? 2;
+      const pxPerMetre = pxAtOneMetre / cam.position.distanceTo(t.anchor);
+      let level: TagLevel = 2;
+      if (pxPerMetre < (cur >= 2 ? NAME_BELOW : NAME_ABOVE)) level = 1;
+      if (pxPerMetre < (cur >= 1 ? DOT_BELOW : DOT_ABOVE)) level = 0;
+      projected.copy(t.anchor).project(cam);
+      if (projected.z < 1 && Math.abs(projected.x) < 1.3 && Math.abs(projected.y) < 1.3) {
+        const cx = ((projected.x + 1) / 2) * size.width;
+        const cy = ((1 - projected.y) / 2) * size.height;
+        for (; level > 0; level--) {
+          const r = rectAt(t, level, cx, cy);
+          if (!placed.some((p) => overlaps(p, r, level > cur ? PROMOTE_MARGIN : 0))) break;
+        }
+        placed.push(rectAt(t, level, cx, cy));
+      }
+      next[t.id] = level;
+      if (was[t.id] !== level) changed = true;
+    }
+    if (changed || Object.keys(was).length !== specs.length) {
+      current.current = next;
+      setLevels(next);
+    }
+  });
+
+  return (
+    <group>
+      {specs.map((t) => (
+        <Html key={t.id} position={t.anchor} center zIndexRange={[1, 0]} pointerEvents="none">
+          <div className="scene-tag" data-lod={LOD[levels[t.id] ?? 2]}>
+            <span className={`mark tone-${t.tone}`} aria-hidden />
+            <span className="scene-tag-name">{t.name}</span>
+            {t.sub && <span className={`scene-tag-sub tone-${t.tone}`}>{t.sub}</span>}
           </div>
         </Html>
-      )}
+      ))}
     </group>
   );
 }
@@ -145,6 +280,7 @@ export function Parts({ layout }: { layout: Record<string, PartBox> }) {
       {site.partOrder.map((id) => (
         <PartMesh key={id} id={id} box={layout[id]} />
       ))}
+      <PartTags layout={layout} />
     </group>
   );
 }

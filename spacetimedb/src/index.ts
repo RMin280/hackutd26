@@ -222,7 +222,7 @@ const decision = table(
     seq: t.u64().primaryKey().autoInc(),
     atMin: t.u32(),
     actor: t.string(),
-    actorKind: t.string(), // facility | scheduler | cooling | fixer | squawk
+    actorKind: t.string(), // facility | scheduler | cooling | fixer | updater | squawk
     actorRole: t.string(),
     title: t.string(),
     verdict: t.string(), // allow | warn | deny | failure | shared_cause | isolated | placement | info | plan | fixed | handoff

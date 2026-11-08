@@ -247,7 +247,7 @@ export const ACTOR_KIND: Record<Role, ActorKind> = {
   scheduler_agent: 'scheduler',
   cooling_agent: 'cooling',
   remediation_agent: 'fixer',
-  update_agent: 'scheduler', // the same icon as the scenario's scripted update agent
+  update_agent: 'updater', // its own popups in the view (frontend/src/scene/fixes.ts)
   facility: 'facility',
   viewer: 'facility',
 };
