@@ -28,12 +28,18 @@ export const C = {
   gold: '#ddb67c',
   red: '#e5534b',
   white: '#f5f5f5',
+  // Software being changed (an online update, a drain-required one, switch firmware). The one
+  // colour outside the brand palette besides red: every brand colour already means something
+  // in the hall, and a hue of its own is what keeps "being updated" apart from "lost backup",
+  // "failed", "protected" and "safe placement" at a glance.
+  update: '#a78bfa',
 
   // node panels
   nodeJob: '#1d3b5e',
   nodeTenant: '#2c2c30',
   nodeFree: '#1a1a1c',
   nodeOut: '#0f0f11', // held out of service by a maintenance lease: powered down, LEDs dark
+  nodeUpdateOut: '#3b2f6b', // held out for a drain-required update: powered down too, but it is software, not a repair
 
   // equipment
   partBody: '#232326',

@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { DecisionEvent } from '../../frontend/src/model/types';
-import { MAX_LINES, softwareFixes } from '../../frontend/src/scene/fixes';
+import { MAX_LINES, detailOf, softwareFixes } from '../../frontend/src/scene/fixes';
 
 let seq = 0;
 const row = (p: Partial<DecisionEvent>): DecisionEvent => ({
@@ -84,4 +84,26 @@ test("the update agent's advisory gets its own popup, follows its wave onto the 
   const after = softwareFixes(newestFirst(more));
   assert.equal(after.filter((f) => f.agent === 'updater').length, 1);
   assert.equal(after[0].status, 'fixed');
+});
+
+test("the model's thinking and words ride along, newest reply first; a row's reason shows only when it adds to the title", () => {
+  const plan = JSON.stringify({ steps: [], model: 'Nemotron on Brev', thinking: 'A free spare failed; no job is on it.', said: 'Taking it out of service.' });
+  const step = JSON.stringify({ thinking: 'Isolated, as expected.' });
+  const rows = [
+    row({ type: 'agent', title: 'Working on node-12', reason: 'Taking broken_node. node-12 is a free spare that failed.' }),
+    row({ type: 'agent_plan', verdict: 'plan', title: 'Plan for node-12: diagnose → finish', reason: 'Plan: confirm it is isolated · done', data: plan }),
+    row({ title: 'diagnose: isolated. node-12 alone', reason: 'diagnose: isolated. node-12 alone', data: step }),
+    row({ title: 'diagnose: isolated. node-12 alone…', reason: 'diagnose: isolated. node-12 alone, nothing shared upstream' }),
+    row({ type: 'agent', verdict: 'fixed', title: 'Fixed node-12', reason: 'FIXED: node-12 is out of service and a tech is on the way.' }),
+  ];
+  const [fix] = softwareFixes(newestFirst(rows));
+  assert.equal(fix.model, 'Nemotron on Brev');
+  assert.equal(fix.thinking, 'Isolated, as expected.', 'the step row replaces the plan row');
+  assert.equal(fix.said, undefined, 'the newer reply said nothing, so nothing stale is kept');
+  assert.deepEqual(
+    fix.lines.map((l) => l.detail),
+    ['confirm it is isolated · done', undefined, undefined, 'node-12 is out of service and a tech is on the way.'],
+  );
+  assert.equal(detailOf({ title: 'Working on node-12', reason: 'Taking broken_node. node-12 is a free spare that failed.' }), 'Taking broken_node. node-12 is a free spare that failed.');
+  assert.equal(detailOf({ title: 'Row 3 patched', reason: '' }), undefined);
 });

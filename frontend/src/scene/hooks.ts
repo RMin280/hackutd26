@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useStore } from '../store';
+import { softwareWork, type SoftwareWork } from './software';
 
 /** Racks under an active protection lease right now. */
 export function useProtectedRacks() {
@@ -22,3 +23,13 @@ export function useUnprotectedParts() {
   }, [world.margins]);
 }
 
+/**
+ * Software work running right now (live mode's `work` table; the mock has none), so the hall can
+ * colour it apart from repairs: what is being updated, not what is broken.
+ */
+export function useSoftwareWork(): SoftwareWork {
+  const site = useStore((s) => s.site);
+  const work = useStore((s) => s.world.work);
+  const owner = useStore((s) => s.world.owner);
+  return useMemo(() => softwareWork(site, owner, work), [site, work, owner]);
+}

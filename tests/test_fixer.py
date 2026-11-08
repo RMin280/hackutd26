@@ -286,6 +286,39 @@ def test_revising_the_plan_when_a_result_changes_things():
     assert revised.data["revision"] == 1 and revised.data["change"] == "Diagnosis found CDU-31 degraded"
 
 
+class ThinkingModel(ListModel):
+    """ListModel whose tool-call replies carry reasoning the way OpenRouter returns it, and a few words."""
+
+    def chat(self, messages, **kwargs) -> Reply:
+        name, args = self.steps[min(self.calls, len(self.steps) - 1)]
+        self.calls += 1
+        message = {
+            "role": "assistant",
+            "content": f"Step {self.calls}.",
+            "reasoning": f"  Thinking   before step {self.calls}.  ",
+            "tool_calls": [{"id": f"c{self.calls}", "type": "function", "function": {"name": name, "arguments": json.dumps(args)}}],
+        }
+        completion = ChatCompletion.model_validate(
+            {"id": "x", "object": "chat.completion", "created": 0, "model": "list", "choices": [{"index": 0, "message": message, "finish_reason": "stop"}]}
+        )
+        return Reply(completion, SCRIPTED)
+
+
+def test_the_models_reasoning_and_words_ride_on_its_rows():
+    br = MockSquawk()
+    outcome = run_fixer(spare_failure(br), br, ThinkingModel(SPARE_PLAN, ("diagnose_node", {}), ("escalate", {"reason": "x"})))
+    assert outcome.status == "handed_off"
+    plan_row = [e for e in br.events if e.type == "agent_plan"][-1]
+    assert plan_row.data["thinking"] == "Thinking before step 1." and plan_row.data["said"] == "Step 1."
+    assert plan_row.reason == "Plan: test · test · test · test"  # the steps' whys, in order
+    step_row = [e for e in br.events if e.type == "agent_step"][-1]
+    assert step_row.data["thinking"] == "Thinking before step 2."
+    # No reasoning returned: the rows carry none, rather than an empty field.
+    br2 = MockSquawk()
+    run_fixer(spare_failure(br2), br2, ListModel(SPARE_PLAN, ("escalate", {"reason": "x"})))
+    assert "thinking" not in [e for e in br2.events if e.type == "agent_plan"][-1].data
+
+
 def test_a_second_submit_plan_is_refused():
     br = MockSquawk()
     outcome = run_fixer(spare_failure(br), br, ListModel(SPARE_PLAN, SPARE_PLAN, ("escalate", {"reason": "x"})))

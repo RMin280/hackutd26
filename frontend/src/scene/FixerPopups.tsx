@@ -117,9 +117,24 @@ function FixPopup({ fix, name, at }: { fix: Fix; name: string; at: Vec3 }) {
           {(fix.status === 'waiting' ? fix.lines.slice(-2, -1) : fix.lines).map((l, i, shown) => (
             <li key={l.seq} className={working && i === shown.length - 1 ? 'is-current' : undefined}>
               {l.text}
+              {/* The newest row's words, when they say more than its title: the model's, or Squawk's on a verdict. */}
+              {i === shown.length - 1 && l.detail && <span className="fix-pop-detail">{l.detail}</span>}
             </li>
           ))}
         </ol>
+        {/* What the model is thinking and saying right now, from the rows it wrote; nothing when its server
+            returned no reasoning (scripted runs, thinking off). */}
+        {working && (fix.thinking || fix.said) && (
+          <div className="fix-pop-mind">
+            {fix.said && <p className="fix-pop-said">{fix.said}</p>}
+            {fix.thinking && (
+              <p className="fix-pop-thinking">
+                <span className="fix-pop-mind-label">Thinking</span>
+                {fix.thinking}
+              </p>
+            )}
+          </div>
+        )}
         <div className={`fix-pop-foot tone-${foot.tone}`}>
           {working ? <span className="fix-pop-spin" aria-hidden /> : <span className="mark" aria-hidden />}
           {foot.text}

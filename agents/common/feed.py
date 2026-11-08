@@ -38,5 +38,7 @@ def describe(e: Event) -> str:
         for i, step in enumerate(d.get("steps") or [], 1):
             when = f" [{step['when']}]" if step.get("when") else ""
             lines.append(f"{pad}  {i}. {step['tool']}{when}: {step['why']}")
+        if d.get("thinking"):
+            lines.append(f"{pad}  thinking: {d['thinking']}")
         return "\n".join(lines)
     return head + e.reason

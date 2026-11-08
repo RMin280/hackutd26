@@ -48,14 +48,21 @@ const ACTOR_DISPLAY: Record<string, string> = {
 };
 export const actorName = (actor: string) => ACTOR_DISPLAY[actor] ?? actor;
 
-/** Which model wrote a row, from the backend's `data` (the agents put `model` on their plan rows). */
-export function modelOf(e: Pick<DecisionEvent, 'data'>): string | undefined {
+/** One string field of a row's `data` (JSON the backend keeps for the agents' rows), if it is there. */
+export function dataText(e: Pick<DecisionEvent, 'data'>, key: string): string | undefined {
   if (!e.data) return undefined;
   try {
     const d: unknown = JSON.parse(e.data);
-    const m = d && typeof d === 'object' && !Array.isArray(d) ? (d as { model?: unknown }).model : undefined;
-    return typeof m === 'string' && m ? m : undefined;
+    const v = d && typeof d === 'object' && !Array.isArray(d) ? (d as Record<string, unknown>)[key] : undefined;
+    return typeof v === 'string' && v ? v : undefined;
   } catch {
     return undefined;
   }
 }
+
+/** Which model wrote a row (the agents put `model` on their plan rows). */
+export const modelOf = (e: Pick<DecisionEvent, 'data'>) => dataText(e, 'model');
+/** The model's reasoning behind a row, when its server returned any (`thinking` on plan and step rows). */
+export const thinkingOf = (e: Pick<DecisionEvent, 'data'>) => dataText(e, 'thinking');
+/** What the model said in words with the tool calls behind a row, if anything (`said`). */
+export const saidOf = (e: Pick<DecisionEvent, 'data'>) => dataText(e, 'said');

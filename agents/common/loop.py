@@ -14,6 +14,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Protocol
 
 import openai
+from openai.types.chat import ChatCompletionMessage
 
 from ..squawk import Squawk, SquawkUnavailable, Blocker, OutOfScope, fmt_time
 from ..llm import ModelUnavailable, Reply, history_entry
@@ -21,6 +22,7 @@ from .issues import Issue
 from .playbook import MAX_TEXT, Playbook, Run, Tool, ToolBox
 
 MAX_MODEL_CALLS = 10
+MAX_THINKING = 600  # characters of the model's reasoning kept with the rows it writes
 
 PLANNING_RULES = """How to work:
 1. Plan first: call submit_plan with the steps you'll take, in order, each with a one-line why. Give a step a "when" if it depends on a result (for example "if the check says warn"). Check before you act: each action needs its check earlier in the plan.
@@ -63,6 +65,22 @@ class Outcome:
 
 def system_prompt(intro: str, playbook: Playbook) -> str:
     return f"{intro}\n\n{PLANNING_RULES}\n\nThis issue ({playbook.kind}):\n{playbook.goal}"
+
+
+def thinking_of(message: ChatCompletionMessage) -> str:
+    """The model's reasoning behind this reply, as the server returned it: OpenRouter's
+    `reasoning` (or its `reasoning_details`), vLLM / NIM's `reasoning_content`. Empty when
+    thinking is off (AGENT_REASONING_EFFORT=none) or the server keeps it to itself."""
+    extra = message.model_extra or {}
+    text = extra.get("reasoning") or extra.get("reasoning_content") or ""
+    if not text and isinstance(extra.get("reasoning_details"), list):
+        text = " ".join(str(d.get("text") or d.get("summary") or "") for d in extra["reasoning_details"] if isinstance(d, dict))
+    return " ".join(str(text).split())[:MAX_THINKING]
+
+
+def said_in(message: ChatCompletionMessage) -> str:
+    """What the model said in words alongside its tool calls, if anything."""
+    return " ".join((message.content or "").split())[:MAX_TEXT] if message.tool_calls else ""
 
 
 def issue_message(issue: Issue) -> str:
@@ -109,6 +127,9 @@ def run_agent(
                 served.append(reply.endpoint.label)
             run.extra["model"] = reply.endpoint.display  # the plan row says which Nemotron wrote it, and where
             message = reply.message
+            # Its reasoning and its words go out with the next rows it writes (the view shows them).
+            run.extra["thinking"] = thinking_of(message)
+            run.extra["said"] = said_in(message)
             messages.append(history_entry(message))
             if not message.tool_calls:
                 if not nudged:

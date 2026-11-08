@@ -205,7 +205,7 @@ class ToolBox:
             run.plan = run.plan[index + 1 :]
         run.done.append(name)
         if not tool.acts and name not in ("escalate", "finish", "keep_waiting"):
-            run.br.record(run.actor, "agent_step", run.issue.subject, f"{name}: {_gist(result)}")
+            run.br.record(run.actor, "agent_step", run.issue.subject, f"{name}: {_gist(result)}", **_voice(run))
         return result
 
     def _find_in_plan(self, name: str) -> tuple[int | None, str | None]:
@@ -245,16 +245,19 @@ class ToolBox:
 
         run.plan = steps
         run.plans.append(steps)
+        # The row's title lists the tools (Squawk builds it from `steps`); its reason carries the
+        # model's own one-line why for each, in order.
         head = f"Revised plan ({reason})" if revising else "Plan"
         run.br.record(
             run.actor,
             "agent_plan",
             run.issue.subject,
-            f"{head}: {' -> '.join(s.tool for s in steps)}",
+            f"{head}: {' · '.join(s.why for s in steps)}",
             steps=[asdict(s) for s in steps],
             revision=len(run.plans) - 1,
             change=reason,
             model=str(run.extra.get("model", "")),
+            **_voice(run),
         )
         return {"accepted": True, "steps": len(steps)}
 
@@ -321,6 +324,12 @@ def _parse_args(tool: Tool, raw: str | None) -> dict[str, Any]:
                 raise ValueError(f"{key} can't be empty.")
         out[key] = value
     return out
+
+
+def _voice(run: Run) -> dict[str, str]:
+    """The model's reasoning and words behind its latest reply (loop.py keeps them on the run),
+    for the rows the agent writes about an issue. Nothing when there is nothing."""
+    return {k: v for k in ("thinking", "said") if (v := run.extra.get(k))}
 
 
 def _gist(result: dict[str, Any]) -> str:

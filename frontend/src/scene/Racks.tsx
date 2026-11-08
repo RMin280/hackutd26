@@ -5,7 +5,7 @@ import { useStore } from '../store';
 import { C } from '../theme';
 import { NODE, RACK, nodeCenter, rackBase, rowFacing } from './layout';
 import { marginText, ownerText } from '../ui/format';
-import { useProtectedRacks } from './hooks';
+import { useProtectedRacks, useSoftwareWork } from './hooks';
 
 const tmpObj = new THREE.Object3D();
 const tmpColor = new THREE.Color();
@@ -155,6 +155,7 @@ export function Racks() {
   }, [selection, site]);
 
   const protectedRacks = useProtectedRacks();
+  const software = useSoftwareWork();
 
   const bodyColor = (i: number) => {
     if (i === hovered.current) return C.rackBodyHover;
@@ -207,11 +208,14 @@ export function Racks() {
 
   const nodeColor = (n: string): string => {
     if (world.nodeState[n] === 'failed') return C.red;
-    // Held out of service by a lease (a repair, a drain-required update): powered down, so it goes dark.
-    if (world.nodeState[n] === 'maintenance') return C.nodeOut;
+    // Held out of service by a lease: powered down, so it goes dark. Violet-dark when the lease is
+    // a drain-required update, so software work reads apart from a repair.
+    if (world.nodeState[n] === 'maintenance') return software.drained.has(n) ? C.nodeUpdateOut : C.nodeOut;
     if (atRisk.has(n)) return C.gold;
     const o = world.owner[n];
     if (placed.has(n)) return C.ice;
+    // An online update: the node keeps running (its LEDs say so); the panel says what is changing.
+    if (software.online.has(n)) return C.update;
     if (o.kind === 'job') return C.nodeJob;
     if (o.kind === 'tenant') return C.nodeTenant;
     return C.nodeFree;
@@ -225,7 +229,7 @@ export function Racks() {
     });
     nodeRef.current.instanceColor!.needsUpdate = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [world, atRisk, placed, site, N]);
+  }, [world, atRisk, placed, software, site, N]);
 
   useFrame(({ clock }) => {
     if (!pulsing.length) return;
@@ -297,9 +301,10 @@ export function Racks() {
           const st = world.nodeState[nid];
           setHoveredRack(site.rackOrder.indexOf(site.nodes[nid].rack));
           canvas.style.cursor = 'pointer';
+          const state = software.drained.has(nid) ? 'drain-required update' : software.online.has(nid) && st === 'ok' ? 'online update' : st;
           setHover({
             label: nid,
-            sub: st === 'ok' ? ownerText(world.owner[nid]) : `${st} · ${ownerText(world.owner[nid])}`,
+            sub: state === 'ok' ? ownerText(world.owner[nid]) : `${state} · ${ownerText(world.owner[nid])}`,
             x: e.clientX,
             y: e.clientY,
           });
