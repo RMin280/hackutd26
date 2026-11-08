@@ -7,11 +7,11 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useStore } from '../store';
 import { C } from '../theme';
-import { ENTRY, type PartBox } from './layout';
+import type { PartBox } from './layout';
 import { STAFF_LAYER, buildCrew } from './Staff';
 import { inForeground } from './camera';
-import { buildGrid, buildHallGrid, spotsFor, type Repair, type Spot } from './nav';
-import { createTech, type TechOffice, type Tech as TechBrain } from './rounds';
+import { buildHallGrid, spotsFor, type Repair, type Spot } from './nav';
+import { buildOffice, createTech, type Tech as TechBrain } from './rounds';
 import type { Airlock } from './airlock';
 
 const noRaycast = () => null;
@@ -71,12 +71,13 @@ function buildFx(): Fx {
   const update = (tech: TechBrain, t: number, dt: number) => {
     const g = tech.gull;
 
-    // route dots, only on the way to a repair (not on the way back to the post)
+    // route dots, only on the way to a repair (not on the way back to the desk): the whole walk
+    // ahead, through the entrance's doors and on to the repair
     let n = 0;
-    if (tech.phase === 'walking' && tech.job) {
+    if ((tech.phase === 'walking' || tech.phase === 'doors') && tech.job) {
       let from = { x: g.x, z: g.z };
       let at = DOT_GAP * 0.8; // how far along the current leg the next dot goes
-      for (const to of tech.route) {
+      for (const to of tech.plan) {
         const dx = to.x - from.x;
         const dz = to.z - from.z;
         const len = Math.hypot(dx, dz);
@@ -141,25 +142,10 @@ function buildFx(): Fx {
 
 const center = new THREE.Vector3();
 
-/** The office floor, its desk in the way, and where the tech waits at the desk (facing it, east). */
-export function officeFor(doors: Airlock): TechOffice {
-  const { office: o, desk } = ENTRY;
-  const [dw, , dd] = desk.size;
-  const deskRect = { x0: desk.x - dw / 2, x1: desk.x + dw / 2, z0: desk.z - dd / 2, z1: desk.z + dd / 2 };
-  return {
-    grid: buildGrid(o, [deskRect]),
-    desk: { x: deskRect.x0 - 0.55, z: desk.z, face: Math.PI / 2, work: [deskRect.x0, desk.size[1], desk.z] },
-    doors,
-    hallSide: ENTRY.hallSide,
-    middle: ENTRY.middle,
-    officeSide: ENTRY.officeSide,
-  };
-}
-
 export function Tech({ layout, doors }: { layout: Record<string, PartBox>; doors: Airlock }) {
   const site = useStore((s) => s.site);
   const camera = useThree((s) => s.camera);
-  const office = useMemo(() => officeFor(doors), [doors]);
+  const office = useMemo(() => buildOffice(doors), [doors]);
   const crew = useMemo(() => {
     const c = buildCrew([{ route: [{ x: office.desk.x, z: office.desk.z }], speed: 0, start: 0 }], { hat: true });
     c.gulls[0].yaw = office.desk.face;

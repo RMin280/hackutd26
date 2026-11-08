@@ -321,7 +321,9 @@ export function FloorLabels({ parts }: { parts: Record<string, PartBox> }) {
       <FloorText {...t} text="COOLING" position={[ROW_X0 - 2.0, y, rowZ(1) - RACK.d / 2 - 0.9]} height={0.34} color={C.label} />
       <FloorText {...t} text="CHILLERS" position={[chiller1[0], y, chiller1[2] - 2.2]} height={0.34} color={C.label} />
       <FloorText {...t} text="PDU · LEAF" position={[ROW_X1 + 1.25, y, rowZ(1) - RACK.d / 2 - 0.9]} height={0.3} color={C.label} />
-      <FloorText {...t} text="TECH OFFICE" position={[(ENTRY.office.x0 + ENTRY.office.x1) / 2 - 0.3, y, ENTRY.office.z1 - 0.55]} height={0.26} color={C.label} />
+      <FloorText {...t} text="TECH OFFICE" position={[(ENTRY.office.x0 + ENTRY.office.x1) / 2 - 0.3, y, ENTRY.office.z1 - 0.5]} height={0.24} color={C.label} />
+      <FloorText {...t} text="TO HALL B" position={[(ENTRY.corridor.x0 + ENTRY.corridor.x1) / 2, y, ENTRY.z - 4]} height={0.18} color={C.label} opacity={0.8} />
+      <FloorText {...t} text="TO HALL C" position={[(ENTRY.corridor.x0 + ENTRY.corridor.x1) / 2, y, ENTRY.office.z1 + 3]} height={0.18} color={C.label} opacity={0.8} />
       <FloorText {...t} text="SPINE" position={[spine1[0], y, spine1[2] - 1.2]} height={0.3} color={C.label} />
     </group>
   );

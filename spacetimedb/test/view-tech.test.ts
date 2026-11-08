@@ -30,7 +30,7 @@ import {
   type Rect,
   type Repair,
 } from '../../frontend/src/scene/nav';
-import { POST, RETRY_AFTER, brokenIn, createTech, type Tech, type TechOffice } from '../../frontend/src/scene/rounds';
+import { POST, RETRY_AFTER, brokenIn, buildOffice, createTech, type Tech } from '../../frontend/src/scene/rounds';
 
 const site = buildSite();
 const layout = buildPartLayout(site);
@@ -350,17 +350,7 @@ test('someone standing in a doorway holds that door open', () => {
 
 function officeSetup(broken: Record<string, PartState>) {
   const doors = lockAt();
-  const { office: o, desk } = ENTRY;
-  const [dw, , dd] = desk.size;
-  const deskRect = { x0: desk.x - dw / 2, x1: desk.x + dw / 2, z0: desk.z - dd / 2, z1: desk.z + dd / 2 };
-  const office: TechOffice = {
-    grid: buildGrid(o, [deskRect]),
-    desk: { x: deskRect.x0 - 0.55, z: desk.z, face: Math.PI / 2, work: [deskRect.x0, desk.size[1], desk.z] },
-    doors,
-    hallSide: ENTRY.hallSide,
-    middle: ENTRY.middle,
-    officeSide: ENTRY.officeSide,
-  };
+  const office = buildOffice(doors);
   let world: World = initialWorld(site);
   for (const [id, state] of Object.entries(broken)) {
     if (site.parts[id]) world.partState[id] = state;
@@ -389,7 +379,24 @@ test('the office is reached only through the doors: the hall floor and the offic
   assert.equal(cellAt(office.grid, nodeSpot.x, nodeSpot.z), -1, 'the hall is not on the office floor');
   assert.equal(cellAt(hall, office.desk.x, office.desk.z), -1, 'and the office is not on the hall floor');
   assert.ok(walkable(hall, cellAt(hall, ENTRY.hallSide.x, ENTRY.hallSide.z)), 'it can wait for the hall-side door');
-  assert.ok(planRoute(office.grid, office.desk, [{ tag: 'x', spots: [{ ...office.desk, x: ENTRY.officeSide.x, z: ENTRY.officeSide.z }] }]), 'and for the office-side one');
+  const out = planRoute(office.grid, office.desk, [{ tag: 'x', spots: [{ ...office.desk, x: ENTRY.officeSide.x, z: ENTRY.officeSide.z }] }]);
+  assert.ok(out, 'and, down the corridor, for the corridor-side one');
+  // from the desk it leaves by the office door, then walks up the corridor to the entrance
+  const walk = [office.desk, ...out.points];
+  const c = ENTRY.corridor;
+  const d = ENTRY.officeDoor;
+  const through = walk.some((p, i) => i > 0 && walk[i - 1].x > d.x && p.x <= d.x) || walk.some((p) => Math.abs(p.x - d.x) < 0.1);
+  assert.ok(through, 'through the office door');
+  const crossing = (a: Point, b: Point) => (d.x - a.x) / (b.x - a.x);
+  for (let i = 1; i < walk.length; i++) {
+    const [a, b] = [walk[i - 1], walk[i]];
+    if ((a.x - d.x) * (b.x - d.x) < 0) {
+      const z = a.z + (b.z - a.z) * crossing(a, b);
+      assert.ok(Math.abs(z - d.z) < WALL.door / 2, `crosses the office wall in its doorway (z ${z.toFixed(2)})`);
+    }
+  }
+  assert.ok(walk.every((p) => p.x < c.x1 || (p.z > ENTRY.office.z0 && p.z < ENTRY.office.z1)), 'east of the corridor only inside the office');
+  assert.ok(Math.abs(office.desk.z - ENTRY.z) > 6, 'the office is well away from the entrance');
 });
 
 test('on duty it leaves its office through both doors, repairs, and comes back to its desk', () => {
@@ -433,4 +440,75 @@ test('off duty it stays at its desk; called off on the way out, it goes back to 
   }
   assert.equal(s.tech.zone, 'office');
   assert.deepEqual(s.repaired, []);
+});
+
+/** Somewhere a gull may stand: free floor in the hall or on the office side, or in the hallway between the doors. */
+function legal(office: ReturnType<typeof buildOffice>, p: Point): boolean {
+  const h = ENTRY.hallway;
+  // the hallway between the doors, and straight through either doorway
+  const inHallway = p.x >= h.x0 && p.x <= h.x1 && Math.abs(p.z - ENTRY.z) <= (h.z1 - h.z0) / 2 - BODY + 0.05;
+  const inDoorway = p.x >= ENTRY.doors[0] - 0.5 && p.x <= ENTRY.doors[1] + 0.5 && Math.abs(p.z - ENTRY.z) <= WALL.door / 2 - 0.2;
+  const onFloor = (g: typeof hall) => {
+    const i = cellAt(g, p.x, p.z);
+    return i >= 0 && g.clear[i] >= BODY - CELL;
+  };
+  return inHallway || inDoorway || onFloor(hall) || onFloor(office.grid);
+}
+
+/** A tech made afresh (as after a reset reseeds the hall) around a gull standing at `p`, run off duty until it is home. */
+function homeFrom(p: Point) {
+  const doors = lockAt();
+  const office = buildOffice(doors);
+  const tech = createTech({ grid: hall, office, gull: gullAt(p), spots: (r) => spotsFor(site, layout, r), repair: () => {} });
+  const world = initialWorld(site);
+  const off: Point[] = [];
+  let t = 0;
+  for (; t < 200; t += 0.05) {
+    tech.update(0.05, t, false, world);
+    if (!legal(office, tech.gull)) off.push({ x: tech.gull.x, z: tech.gull.z });
+    if (tech.zone === 'office' && tech.phase === 'idle' && Math.hypot(tech.gull.x - office.desk.x, tech.gull.z - office.desk.z) < 0.05) break;
+  }
+  return { tech, office, off, t };
+}
+
+test('a fresh tech out in the hall walks home the legal way: through both doors, not through walls', () => {
+  const [spot] = spotsFor(site, layout, { kind: 'node', id: 'node-417' }); // deep in a hot aisle
+  const { tech, office, off } = homeFrom(spot);
+  assert.equal(tech.zone, 'office');
+  assert.ok(Math.hypot(tech.gull.x - office.desk.x, tech.gull.z - office.desk.z) < 0.05, 'at its desk');
+  assert.deepEqual(off.slice(0, 3), [], `${off.length} steps off the floor`);
+});
+
+test('a fresh tech part way through the doors finishes going through, then walks home', () => {
+  const { tech, office, off } = homeFrom(ENTRY.middle);
+  assert.equal(tech.zone, 'office');
+  assert.ok(Math.hypot(tech.gull.x - office.desk.x, tech.gull.z - office.desk.z) < 0.05, 'at its desk');
+  assert.deepEqual(off.slice(0, 3), []);
+});
+
+test('on its way out of the office, its plan runs through both doors all the way to the repair', () => {
+  const s = officeSetup({ 'node-417': 'failed' });
+  s.tech.update(0.05, 0, true, s.world());
+  assert.equal(s.tech.zone, 'office');
+  const plan = s.tech.plan;
+  const [spot] = spotsFor(site, layout, { kind: 'node', id: 'node-417' });
+  const near = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.z - b.z) < 0.2;
+  assert.ok(plan.some((p) => near(p, ENTRY.officeSide)), 'to the corridor-side door');
+  assert.ok(plan.some((p) => near(p, ENTRY.middle)), 'into the hallway between the doors');
+  assert.ok(plan.some((p) => near(p, ENTRY.hallSide)), 'out by the hall-side door');
+  assert.ok(near(plan[plan.length - 1], spot), 'and on to the node');
+  // in order, and every leg on legal floor
+  const idx = (q: Point) => plan.findIndex((p) => near(p, q));
+  assert.ok(idx(ENTRY.officeSide) < idx(ENTRY.middle) && idx(ENTRY.middle) < idx(ENTRY.hallSide));
+  const walk = [s.tech.gull, ...plan];
+  for (let i = 1; i < walk.length; i++) {
+    for (let k = 0; k <= 20; k++) {
+      const p = { x: walk[i - 1].x + ((walk[i].x - walk[i - 1].x) * k) / 20, z: walk[i - 1].z + ((walk[i].z - walk[i - 1].z) * k) / 20 };
+      assert.ok(legal(s.office, p), `leg ${i} leaves the floor at ${p.x.toFixed(2)}, ${p.z.toFixed(2)}`);
+    }
+  }
+  // and while it waits at the doors, the plan still runs on to the node
+  for (let t = 0.05; t < 60 && s.tech.phase !== 'doors'; t += 0.05) s.tech.update(0.05, t, true, s.world());
+  assert.equal(s.tech.phase, 'doors');
+  assert.ok(near(s.tech.plan[s.tech.plan.length - 1], spot));
 });

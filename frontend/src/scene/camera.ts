@@ -97,7 +97,7 @@ function boxCorners(min: THREE.Vector3, max: THREE.Vector3): THREE.Vector3[] {
 function hallPoints(parts: Record<string, PartBox>): THREE.Vector3[] {
   const pts = boxCorners(new THREE.Vector3(HALL.x0, 0, HALL.z0), new THREE.Vector3(HALL.x1, RACK.h, HALL.z1));
   const o = ENTRY.office;
-  pts.push(...boxCorners(new THREE.Vector3(o.x0, 0, o.z0), new THREE.Vector3(o.x1 + WALL.t, WALL.base, o.z1)));
+  pts.push(...boxCorners(new THREE.Vector3(ENTRY.corridor.x0, 0, ENTRY.z - 3), new THREE.Vector3(o.x1 + WALL.t, WALL.base, o.z1)));
   for (const b of Object.values(parts)) {
     const outside = b.pos[0] - b.size[0] / 2 < HALL.x0 || b.pos[0] + b.size[0] / 2 > HALL.x1;
     if (!outside) continue;
