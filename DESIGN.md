@@ -238,7 +238,7 @@ For the pitch: *"On a simulated 100,000-GPU site, diagnosis plus safe restart pl
 
 ### 8.1 Backend API, demo agents, MCP
 
-**Our agents call the backend directly** over SpacetimeDB's HTTP API (§8.4). **External agents** would use an MCP server exposing the same calls as seven tools. It is not needed for the demo and is built only if time remains, as a thin wrapper over the agents' HTTP adapter:
+**Our agents call the backend directly** over SpacetimeDB's HTTP API (§8.4). **External agents** use an MCP server exposing the same calls as seven tools (built 2026-11-08: `agents/mcp_server.py`, a thin wrapper over the agents' HTTP adapter; not needed for the demo):
 
 | Tool | Input | Output | On the module |
 | --- | --- | --- | --- |
@@ -315,6 +315,10 @@ The agents code against `agents/squawk.py` (`Squawk`). `MockSquawk` implements i
 
 Nothing here touches the minimum demo. **Status (2026-11-07, late):** rows 1–3 of the build order are in the module on `integration` (`spacetimedb/test/agents.test.ts`): `decision.type/subject/data` on every row, `record_event`, the `remediation_agent` role (`node_repair` itself, `facility_work` only on a requester's behalf), `routine`/`note`/`on_behalf_of` on `request_work`, `finish_job`, `release_work(id, note)` with the stale-lock rule. `request_approval` is not a separate reducer: the adapter sends `request_work(..., on_behalf_of=requested_for)` and a `warn` verdict waits in `needs_approval` (feed type `approval_requested`). The tenant-node rule stays `deny` for a *working* tenant node; the fixer only touches failed ones, so nothing changes for it. The HTTP adapter (`agents/squawk_http.py`) and `check_setup` against the live database are done (2026-11-08); remaining: the demo steps in §10.2.
 
+### 8.5 Update agent (security advisories → patch waves; `agents/patch/`)
+
+Added 2026-11-08 at the team's request. It mirrors what a large GPU operator needs: patch known vulnerabilities fast, without the patch itself becoming the outage. Code matches advisories against the fleet inventory by version group (component × row: no per-node scan), and picks every target: a canary first, owners' nodes never, a reserve of free spares kept for restarts, prerequisites (BMC firmware before the GPU driver) booked back to back. Nemotron plans each wave and picks its size, writes the notices, and decides whether to wait or finish; code checks the plan and the result. Squawk checks every booking through the existing software scopes (§4.4) under a narrow role, `update_agent` (`sw_online`, `sw_exclusive`, `switch_firmware`; `record`). No prediction: an advisory is a published fact, and "exploited in the wild" is the feed's own flag. The inventory and advisories are simulated (`agents/patch/data/`); production imports both. Every model request from any agent is capped by `agents/budget.py`. Details: `agents/README.md`.
+
 ## 9. Security (Iteration 1 baseline)
 
 Squawk approves or blocks physical actions and holds a map of every weak point, so it's built like a control plane from day one.
@@ -381,7 +385,7 @@ Two machines on one Tailscale network:
 - **Machine A** (dedicated backend box): `spacetime start` listening on its tailnet address (or all interfaces), the module published as `squawk`, the fixer agent (`python -m agents.fixer` with `SPACETIME_HOST` set to the local server), and the Brev port-forward for the primary model (`brev port-forward <machine> --port 8000:8000`). Keep the admin CLI identity here.
 - **Machine B** (presenter): the view with `VITE_SPACETIMEDB_URI=http://<machine-A-tailnet-ip>:3000` and `VITE_SPACETIMEDB_DB=squawk`. The browser's SpacetimeDB identity self-registers as the shift lead. Presenter keys call the backend's scenario reducers over the tailnet.
 
-**Or on SpacetimeDB Maincloud** (set up 2026-11-08): the module is published as `squawk-hackutd26`, so the view and the agents point at `https://maincloud.spacetimedb.com` from any network, with no Tailscale needed for the backend. The fixer and the Brev port-forward still run on one machine. Anyone who knows the database name can read the public tables there and connect, so open registration is closed (`bash dev.sh cloud lock`) once the presenter's browsers and the agents are registered. The local two-machine setup above stays as the fallback. Commands: the root `README.md`, "On SpacetimeDB Maincloud".
+**Or on SpacetimeDB Maincloud** (set up 2026-11-08): the module is published as `hackutd26-2he95`, so the view and the agents point at `https://maincloud.spacetimedb.com` from any network, with no Tailscale needed for the backend. The fixer and the Brev port-forward still run on one machine. Anyone who knows the database name can read the public tables there and connect, so open registration is closed (`bash dev.sh cloud lock`) once the presenter's browsers and the agents are registered. The local two-machine setup above stays as the fallback. Commands: the root `README.md`, "On SpacetimeDB Maincloud".
 
 Checklist and fallbacks: `HANDOFF.md` §8.
 

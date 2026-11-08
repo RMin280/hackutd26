@@ -161,7 +161,8 @@ def check_server(ep: Any, bad: Callable[..., None], r: Report) -> bool:
         bad(f"{ep.role}: no model server answers at {ep.base_url} ({type(exc).__name__})", fix)
         return False
     if resp.status_code in (401, 403):
-        bad(f"{ep.role}: {ep.base_url} rejected the API key ({resp.status_code})")
+        hint = "Paste the key from build.nvidia.com into NVIDIA_API_KEY (it starts nvapi-)" if ep.provider == "nvidia" else ""
+        bad(f"{ep.role}: {ep.base_url} rejected the API key ({resp.status_code})", hint)
         return False
     if resp.status_code != 200:
         if not ep.model:
@@ -182,7 +183,7 @@ def check_round_trip(ep: Any, settings: Any, bad: Callable[..., None], r: Report
     from .llm import EndpointNotConfigured, complete, describe_error, history_entry, make_client
 
     try:
-        client = make_client(ep, timeout=180, max_retries=1)
+        client = make_client(ep, timeout=180, max_retries=0)  # no unchecked retries
     except EndpointNotConfigured as exc:
         bad(f"{ep.role}: {exc}")
         return False
@@ -197,9 +198,21 @@ def check_round_trip(ep: Any, settings: Any, bad: Callable[..., None], r: Report
         {"role": "user", "content": "Can a technician work on rack-r3-07 right now? Check it first."},
     ]
 
+    from .budget import Budget, BudgetExceeded
+
+    budget = Budget(settings.budget, settings.usage_file or None, paid_fallbacks=bool(settings.fallback_models))  # these count too
     t0 = time.perf_counter()
     try:
-        first = complete(client, ep, settings, messages, tools=[CHECK_TOOL], max_tokens=2048)
+        held = budget.check(ep, messages, 2048)
+        try:
+            first = complete(client, ep, settings, messages, tools=[CHECK_TOOL], max_tokens=2048)
+        except Exception:
+            budget.settle(ep, held, failed=True)
+            raise
+        budget.settle(ep, held, first)
+    except BudgetExceeded as exc:
+        bad(f"{ep.role}: {exc}")
+        return False
     except Exception as exc:  # noqa: BLE001 - report any client error in plain words
         bad(f"{ep.role}: model request failed", describe_error(exc, ep))
         return False
@@ -215,7 +228,13 @@ def check_round_trip(ep: Any, settings: Any, bad: Callable[..., None], r: Report
         messages.append({"role": "tool", "tool_call_id": c.id, "content": json.dumps(FAKE_RESULT)})
     t1 = time.perf_counter()
     try:
-        second = complete(client, ep, settings, messages, tools=[CHECK_TOOL], max_tokens=2048)
+        held = budget.check(ep, messages, 2048)
+        try:
+            second = complete(client, ep, settings, messages, tools=[CHECK_TOOL], max_tokens=2048)
+        except Exception:
+            budget.settle(ep, held, failed=True)
+            raise
+        budget.settle(ep, held, second)
     except Exception as exc:  # noqa: BLE001
         bad(f"{ep.role}: follow-up request failed", describe_error(exc, ep))
         return False
@@ -342,6 +361,14 @@ def main(argv: list[str] | None = None) -> int:
     if not primary_ok and not backup_ok:
         r.failed = True
 
+    from .budget import Budget
+
+    b = Budget(settings.budget, settings.usage_file or None).summary()
+    lim = b["limits"]
+    r.info(
+        f"Credits: ${b['total_usd']:.4f} of ${lim.total_usd:.2f} spent ({b['total_requests']} requests); today ${b['today_usd']:.4f} of "
+        f"${lim.daily_usd:.2f}, {b['today_requests']}/{lim.daily_requests} requests. Caps: AGENT_BUDGET_USD, AGENT_DAILY_BUDGET_USD."
+    )
     check_spacetime(r, settings)
 
     if r.failed:

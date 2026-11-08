@@ -52,7 +52,15 @@ from .squawk import (
 
 FIXER_NAME = "fixer-agent"
 FIXER_ROLE = "remediation_agent"
-LIVE = ("active", "granted")  # work statuses that hold a lease
+# Each agent: its actor name, role and the .env variable that holds its own token.
+AGENTS = {
+    "fixer": (FIXER_NAME, FIXER_ROLE, "SPACETIME_TOKEN"),
+    "update": ("update-agent", "update_agent", "SPACETIME_UPDATE_TOKEN"),
+    # An external agent behind the MCP server: least privilege by default (setup --role to widen).
+    "mcp": ("mcp-agent", "viewer", "SPACETIME_MCP_TOKEN"),
+}
+LIVE = ("active", "granted")
+SOFTWARE_KINDS = ("sw_online", "sw_exclusive", "switch_firmware")  # work statuses that hold a lease
 MAX_DATA = 4000  # record_event's limit on the JSON data, in characters
 
 
@@ -237,6 +245,7 @@ def lease_from_row(w: dict[str, Any]) -> Lease:
         job=w.get("job") or None,
         routine=bool(w.get("routine")),
         note=w.get("note") or "",
+        kind=w.get("kind") or "",
     )
 
 
@@ -284,11 +293,16 @@ class HttpSquawk:
 
     @classmethod
     def from_settings(cls, settings: Any, actor: str = FIXER_NAME) -> "HttpSquawk":
+        agent = next((k for k, (name, _, _) in AGENTS.items() if name == actor), None)
+        if agent is None:  # never fall back to another agent's identity
+            raise SquawkUnavailable(f"No identity is configured for actor {actor!r}.")
+        var = AGENTS[agent][2]
+        token = {"SPACETIME_TOKEN": settings.spacetime_token, "SPACETIME_UPDATE_TOKEN": settings.spacetime_update_token}.get(var) or os.getenv(var, "")
         if not settings.spacetime_db:
             raise SquawkUnavailable("SPACETIME_DB is not set in .env")
-        if not settings.spacetime_token:
-            raise SquawkUnavailable("SPACETIME_TOKEN is not set in .env: run `python -m agents.squawk_http setup`")
-        return cls(HttpTransport(settings.spacetime_host, settings.spacetime_db, settings.spacetime_token), actor)
+        if not token:
+            raise SquawkUnavailable(f"{var} is not set in .env: run `python -m agents.squawk_http setup --agent {agent}`")
+        return cls(HttpTransport(settings.spacetime_host, settings.spacetime_db, token), actor)
 
     # Reads -----------------------------------------------------------------------------
 
@@ -387,6 +401,41 @@ class HttpSquawk:
             w = self._request_work(kind, target, minutes, dry_run=False, routine=routine, note=note, on_behalf_of=on_behalf_of or "")
         except ReducerRefused as exc:
             return LeaseDecision(False, "deny", str(exc))
+        return self._decision(w)
+
+    def request_work(
+        self, actor: str, kind: str, target: str, *, minutes: int = 0, start_in: int = 0, note: str = ""
+    ) -> LeaseDecision:
+        """Software work booked as ourselves (the update agent). Squawk checks it like any request."""
+        self._me(actor)
+        if kind not in SOFTWARE_KINDS:
+            raise OutOfScope(f"{kind} isn't software work; this agent books only {', '.join(SOFTWARE_KINDS)}.")
+        try:
+            w = self._request_work(kind, target, minutes, dry_run=False, routine=False, note=note, on_behalf_of="", start_in=start_in)
+        except ReducerRefused as exc:
+            return LeaseDecision(False, "deny", str(exc))
+        return self._decision(w)
+
+    def simulate_work(self, actor: str, kind: str, target: str) -> Check:
+        self._me(actor)
+        if kind not in SOFTWARE_KINDS:
+            raise OutOfScope(f"{kind} isn't software work.")
+        try:
+            w = self._request_work(kind, target, 0, dry_run=True, routine=False, note="", on_behalf_of="")
+        except ReducerRefused as exc:
+            return Check("deny", str(exc))
+        return Check(w["verdict"], w["reason"], w["earliest_safe"] or None, self._blockers(w))
+
+    def nodes_in_row(self, row: int) -> list[NodeView]:
+        rows = self.t.sql(f"SELECT * FROM node WHERE row_num = {int(row)}")
+        return [node_from_row(r) for r in sorted(rows, key=lambda r: int(r.get("ord", 0)))]
+
+    def free_spares(self) -> list[NodeView]:
+        rows = self.t.sql("SELECT * FROM node WHERE owner_kind = 'free'")  # indexed: one query, not a hall scan
+        ok = [r for r in rows if r["state"] == "ok" and not int(r.get("held_by") or 0)]
+        return [node_from_row(r) for r in sorted(ok, key=lambda r: int(r.get("ord", 0)))]
+
+    def _decision(self, w: dict[str, Any]) -> LeaseDecision:
         granted = w["status"] in LIVE
         return LeaseDecision(
             granted=granted,
@@ -487,10 +536,10 @@ class HttpSquawk:
         return w["kind"], w["actor"]
 
     def _request_work(
-        self, kind: str, target: str, minutes: int, *, dry_run: bool, routine: bool, note: str, on_behalf_of: str
+        self, kind: str, target: str, minutes: int, *, dry_run: bool, routine: bool, note: str, on_behalf_of: str, start_in: int = 0
     ) -> dict[str, Any]:
         ticket = f"{self.actor}-{uuid.uuid4().hex[:12]}"
-        self._call("request_work", [kind, target, 0, max(0, int(minutes)), dry_run, ticket, routine, note, on_behalf_of])
+        self._call("request_work", [kind, target, max(0, int(start_in)), max(0, int(minutes)), dry_run, ticket, routine, note, on_behalf_of])
         return self._one(f"SELECT * FROM work WHERE ticket = {q(ticket)}", ticket)
 
     def _blockers(self, w: dict[str, Any]) -> tuple[Blocker, ...]:
@@ -525,13 +574,22 @@ def setup(argv: list[str] | None = None) -> int:
 
     parser = argparse.ArgumentParser(
         prog="python -m agents.squawk_http setup",
-        description="Give the fixer its own SpacetimeDB identity (token saved to .env) and register it as fixer-agent.",
+        description="Give an agent its own SpacetimeDB identity (token saved to .env, never shown) and register it with its role.",
     )
+    parser.add_argument("--agent", choices=sorted(AGENTS), default="fixer", help="which agent: fixer (fixer-agent) or update (update-agent)")
     parser.add_argument("--server", default="local", help="the spacetime CLI's name for the server (local, maincloud)")
     parser.add_argument("--host", help="server URL, e.g. https://maincloud.spacetimedb.com; saved to .env as SPACETIME_HOST")
     parser.add_argument("--db", help="database name; saved to .env as SPACETIME_DB")
     parser.add_argument("--new", action="store_true", help="get a new identity even if .env already has a token")
+    parser.add_argument("--role", help="mcp only: the role to register the external agent with (default viewer: read only)")
+    parser.add_argument("--name", help="mcp only: the actor name (default mcp-agent); also set SPACETIME_MCP_ACTOR to it")
     args = parser.parse_args(argv)
+    name, role, var = AGENTS[args.agent]
+    if args.agent == "mcp":
+        role, name = args.role or role, args.name or name
+    elif args.role or args.name:
+        print("--role and --name are for --agent mcp; the fixer's and the update agent's roles are fixed.")
+        return 1
 
     old_host = load_settings().spacetime_host
     if args.host:
@@ -545,7 +603,8 @@ def setup(argv: list[str] | None = None) -> int:
     if not db:
         print("Set SPACETIME_DB in .env (or pass --db squawk) first.")
         return 1
-    token = "" if args.new or switched else settings.spacetime_token
+    current = {"SPACETIME_UPDATE_TOKEN": settings.spacetime_update_token, "SPACETIME_TOKEN": settings.spacetime_token}.get(var, os.getenv(var, ""))
+    token = "" if args.new or switched else current
     try:
         if token:
             who = identity_of(token)
@@ -553,28 +612,32 @@ def setup(argv: list[str] | None = None) -> int:
             resp = httpx.post(f"{settings.spacetime_host}/v1/identity", timeout=10)
             resp.raise_for_status()
             token, who = resp.json()["token"], resp.json()["identity"]
-            _set_env(ENV_FILE, {"SPACETIME_TOKEN": token})
-            print(f"New identity; its token is saved in {ENV_FILE.name} as SPACETIME_TOKEN (not shown).")
+            _set_env(ENV_FILE, {var: token})
+            print(f"New identity for {name}; its token is saved in {ENV_FILE.name} as {var} (not shown).")
     except httpx.HTTPError as exc:
         print(f"Couldn't reach SpacetimeDB at {settings.spacetime_host} ({type(exc).__name__}). Is the server running?")
         return 1
     except (KeyError, ValueError) as exc:
-        print(f"SPACETIME_TOKEN in .env isn't a SpacetimeDB token ({exc}). Re-run with --new.")
+        print(f"{var} in .env isn't a SpacetimeDB token ({exc}). Re-run with --new.")
         return 1
+    if switched:
+        others = [f"--agent {k}" for k, (_, _, v) in AGENTS.items() if v != var]
+        print(f"The server changed, so the other agents' tokens in .env are for the old one: re-run setup with {', '.join(others)}.")
 
-    cmd = ["spacetime", "call", "--server", args.server, db, "register_actor", who, FIXER_NAME, FIXER_ROLE, "[]"]
+    cmd = ["spacetime", "call", "--server", args.server, db, "register_actor", who, name, role, "[]"]
     shown = " ".join(cmd[:-1]) + " '[]'"
     print(f"Identity: {who}")
     if not shutil.which("spacetime"):
         print(f"The spacetime CLI isn't on PATH. Ask the admin to run:\n  {shown}")
         return 1
-    print(f"Registering it as {FIXER_NAME} ({FIXER_ROLE}) with the CLI's identity, which must be the admin:\n  {shown}")
+    print(f"Registering it as {name} ({role}) with the CLI's identity, which must be the admin:\n  {shown}")
     done = subprocess.run(cmd, capture_output=True, text=True)
     if done.returncode != 0:
         print((done.stderr or done.stdout).strip()[-500:])
-        print("Registration failed. Run the command above as the database's admin (the identity that published it).")
+        print("Registration failed. Run the command above as the database's admin (the identity that published it), "
+              "and make sure the module there knows the role (republish after pulling).")
         return 1
-    print(f"Registered. Check it with: python -m agents.check_setup --no-llm")
+    print("Registered. Check it with: python -m agents.check_setup --no-llm")
     return 0
 
 
@@ -595,5 +658,5 @@ def identity_of(token: str) -> str:
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "setup":
         raise SystemExit(setup(sys.argv[2:]))
-    print("usage: python -m agents.squawk_http setup [--host URL] [--db NAME] [--server local|maincloud] [--new]")
+    print("usage: python -m agents.squawk_http setup [--agent fixer|update|mcp] [--host URL] [--db NAME] [--server local|maincloud] [--new]")
     raise SystemExit(2)

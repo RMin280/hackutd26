@@ -47,6 +47,43 @@ The storyline has one issue of each type, two handoffs, and a technician report 
 
 **Adding an issue type to an agent:** a rule in its `triage.py`; a `Playbook` (goal, tools, must-include steps, done check) and its tools in its `playbooks.py`; a plan and policy in its `scripted.py`; tests. The planning rules, the model loop and the event loop are shared in `agents/common/`.
 
+## Update agent: security advisories, patched in safe waves
+
+`agents/patch/` keeps the hall's software ahead of known vulnerabilities without causing the outage a careless patch would. It is its own Squawk actor (`update-agent`, role `update_agent`: `sw_online`, `sw_exclusive` and `switch_firmware` only, no hardware or facility work, no booking for others).
+
+**Vulnerability watch (code, no model calls).** Advisories (`agents/patch/data/advisories.json`, simulated, IDs `SQK-SIM-…`; production reads a vendor / NVD / CISA KEV feed) are matched against the fleet inventory (`data/inventory.json`, one version per row and component; production imports it from fleet management). Matching works on version groups (component × row), so it costs the same for 1,280 nodes or 12,544. What has been patched comes from Squawk's own feed (the agent's granted windows that have ended), so a restarted agent carries on where it was. Advisories are worked worst first: exploited, then critical, then by CVSS.
+
+**Rollout rules, enforced in code (`rollout.py`):**
+- **Canary first:** the first wave of an advisory is 2 nodes, 1 row or 1 switch; later waves (the model picks 1–16) follow only once the previous wave's windows have ended.
+- **Spare reserve:** a node-level wave never takes the free healthy spares below `PATCH_SPARE_RESERVE` (40, the demo job's restart size), so a job that fails mid-rollout can always be re-placed.
+- **Owners first:** nodes a running job or a working tenant holds are never waved. Squawk refuses them anyway; the agent tells the job's scheduler or the tenant once, and the shift lead when draining a job is the only way forward. Switch firmware above a running job waits for the job to finish.
+- **Prerequisites in order:** the GPU driver fix needs BMC firmware 3.2.0, so each node gets the firmware window and the driver window right after it, two checked bookings that never overlap.
+- **Halt on refusal:** a wave stops at the first booking refused because of another window instead of repeating the refusal.
+- **Urgent advisories** (critical or exploited) always reach the shift lead; online live patches (the monitoring agent) roll out alongside running jobs.
+
+**Nemotron's part** is the same plan → execute → done-check loop as the fixer (`agents/common/`): it plans each wave, picks the wave size, writes the notices, and chooses to wait or finish. It never picks a target. Code refuses `keep_waiting` until the owners and (when needed) the shift lead are told, and refuses "finished" while anything patchable is left. Advisory text is untrusted and fenced. About 6 model calls per wave, roughly $0.003 on Nemotron 3 Super.
+
+```
+python -m agents.squawk_http setup --agent update   # once per database: the update agent's own identity
+python -m agents.patch --scripted                   # live when SPACETIME_DB is set (--once: handle now and exit)
+python -m agents.patch                              # Nemotron plans the waves
+python -m agents.patch --mock --scripted            # the storyline on the simulated hall
+```
+
+**Both agents at once** (on stage): `python -m agents` runs the fixer and the update agent in one process, each with its own identity, sharing one model router and one credit ledger (`--scripted`, `--once` as above).
+
+## Credit caps (`agents/budget.py`)
+
+Every model request from any agent is checked before it is sent: its worst-case cost (prompt size plus `max_tokens` at the endpoint's price) must fit under `AGENT_BUDGET_USD` (lifetime, default $20), `AGENT_DAILY_BUDGET_USD` ($5) and `AGENT_DAILY_REQUESTS` (600). After the reply, the real cost is recorded (OpenRouter reports it; otherwise tokens × `MODEL_PRICE_*`). The ledger, `.agent_usage.json` (gitignored), is shared by every agent process on the machine under a lock. A damaged ledger refuses rather than resetting. Past a cap, the router fails over to a free backup if there is one, else the agent fails closed and hands off. `check_setup` prints what's been spent.
+
+## MCP server: Squawk for agents we didn't write
+
+`python -m agents.mcp_server` exposes the seven tools of DESIGN.md §8.1 (`check_risk`, `simulate`, `request_lease`, `release_lease`, `get_events`, `diagnose_failure`, `safe_placement`) over MCP: stdio by default, or `--http --port 8765` (bound to 127.0.0.1; put it behind the tailnet, never the internet). It holds one identity (`SPACETIME_MCP_TOKEN`), registered by the admin with the role that external agent should have: `python -m agents.squawk_http setup --agent mcp --role technician` (default `viewer`, read only). Squawk checks that role on every call and audits it. The server adds input checks (ids, work kinds, bounds), 60 calls a minute, and returns Squawk's refusals as results; an unreachable Squawk stays an error so a client never acts on silence. It works with `mcp` 1.x (`FastMCP`) and 2.x (`MCPServer`).
+
+## Dependency audit for this repo
+
+`python -m agents.deps` checks the agents' Python packages against OSV.dev and the backend's and the view's npm packages with `npm audit`, and exits 1 on anything high or critical (usable in CI). `--json` for machines; `--explain` adds a short upgrade plan from Nemotron (one request, under the same caps). Nothing is upgraded automatically.
+
 ## Dependency agent: gray failures in services we rely on
 
 `agents/dependency/` runs scheduled tests of the features we use from three services: text and email paging, building management readings for each CDU gateway, and the revoked-key list. The tests are code and cost no model calls. Squawk sets each feature's state from the results. When a service says it's up but a feature is broken, the dependency agent responds:
@@ -118,7 +155,7 @@ The agents code against `agents/squawk.py` (`Squawk`). `MockSquawk` implements i
 python -m agents.squawk_http setup --db squawk   # once per database: new identity, token into .env, register_actor as fixer-agent (needs the admin CLI)
 python -m agents.check_setup --no-llm            # reads the clock and the feed as the fixer
 # Maincloud instead (the token is per server, so this makes a new identity; then the admin registers it there):
-# python -m agents.squawk_http setup --host https://maincloud.spacetimedb.com --db squawk-hackutd26 --server maincloud
+# python -m agents.squawk_http setup --host https://maincloud.spacetimedb.com --db hackutd26-2he95 --server maincloud
 python -m agents.fixer --scripted                # live whenever SPACETIME_DB is set; --mock for the storyline, --once to handle the feed and exit
 ```
 
@@ -175,4 +212,10 @@ Python has no maintained SpacetimeDB SDK, so agents use its HTTP API: `POST /v1/
 | `AGENT_TEMPERATURE` | `0.6` | Sampling temperature |
 | `SPACETIME_HOST` | `http://127.0.0.1:3000` | SpacetimeDB server (`spacetime start` runs one locally) |
 | `SPACETIME_DB` | empty | Database name the module is published under |
-| `SPACETIME_TOKEN` | empty | Agent identity token; empty means anonymous |
+| `SPACETIME_TOKEN` | empty | The fixer's identity token (`python -m agents.squawk_http setup`) |
+| `SPACETIME_UPDATE_TOKEN` | empty | The update agent's identity token (`setup --agent update`) |
+| `NVIDIA_API_KEY` | empty | Key for `LLM_PROVIDER=nvidia` (NVIDIA's hosted API, build.nvidia.com) |
+| `AGENT_BUDGET_USD`, `AGENT_DAILY_BUDGET_USD`, `AGENT_DAILY_REQUESTS` | `20`, `5`, `600` | Credit caps for metered model endpoints |
+| `MODEL_PRICE_IN_PER_M`, `MODEL_PRICE_OUT_PER_M` | `0.10`, `0.50` | USD per million tokens when the provider doesn't report cost |
+| `AGENT_USAGE_FILE` | `.agent_usage.json` | The shared spending ledger |
+| `PATCH_SPARE_RESERVE` | `40` | Free healthy spares the update agent never takes offline |

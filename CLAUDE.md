@@ -38,7 +38,8 @@ It is one system: the **backend** (SpacetimeDB) holds the map and gives every ve
 | Control-room view: 3D floor map + decision feed + naive-vs-Squawk toggle, in **live mode** on the backend | LLM technician assistant (only if everything else is done) |
 | One-click scenario + 100k-GPU scale test | Real integrations (DCIM, BMS, NetBox, Slurm import), SSO, multi-site |
 | **Fixer agent (Nemotron)** on the live backend, **in the main demo**: 4 low-criticality issue types fixed only through Squawk (`agents/fixer/`, DESIGN.md §8.2), plus the backend additions it needs (DESIGN.md §8.4) and its rows in the decision feed | **Dependency agent** (Nemotron; gray failures in services we rely on): built on `nemotron-init`, **deferred** until the fixer is live. Code stays on the branch; DESIGN.md §8.3 |
-| Deployment on two machines over Tailscale (backend + agents + Brev on one, the view on the other) | MCP server (7 tools): **if time, last.** A thin wrapper over the agents' HTTP adapter; not needed for the demo |
+| **Update agent (Nemotron)**, added 2026-11-08 at the team's request: security advisories matched against an agent-side simulated inventory, fixes rolled out in canary-first waves through Squawk's software scopes, keeping a spare reserve (`agents/patch/`, role `update_agent`); credit caps for every model request (`agents/budget.py`); dependency audit for this repo (`python -m agents.deps`) | Real advisory feeds (NVD / CISA KEV / vendor), inventory import from fleet management |
+| Deployment on two machines over Tailscale (backend + agents + Brev on one, the view on the other) | MCP server (7 tools): **built 2026-11-08** (`agents/mcp_server.py`), a thin wrapper over the agents' HTTP adapter; not needed for the demo |
 
 ## Scope-creep rules
 
@@ -93,7 +94,7 @@ The computing scales because every question touches only one branch of a shallow
 - Every call checks the key's scope (rows) **before** doing anything.
 - Every request, verdict and reason goes to the append-only audit log.
 - Untrusted text (ticket text, technician reports, tool outputs) is data, never instructions; it can't change a verdict. The fixer fences report text as `<untrusted>`.
-- Agents fail closed if Squawk is unreachable, and the fixer also fails closed if both model endpoints are down.
+- Agents fail closed if Squawk is unreachable, and the fixer also fails closed if both model endpoints are down or the credit caps (`agents/budget.py`) are reached.
 - Topology is sensitive: only scoped roles can read the full map. No secrets in code or logs. Model keys and agent tokens live in `.env` (gitignored; template in `.env.example`).
 
 ## Stack (decided)
@@ -145,10 +146,13 @@ hackutd26/
 │   ├── mock_services.py     # simulated services for the (deferred) dependency agent
 │   ├── common/              # shared by the agents: issues, playbook + planning checks, model loop, event loop, feed
 │   ├── fixer/               # fixer agent: triage.py, playbooks.py, agent.py, runner.py, demo.py, scripted.py
+│   ├── patch/               # update agent: fleet.py (advisories, inventory), rollout.py (waves), triage.py, playbooks.py, runner.py, data/
+│   ├── budget.py            # credit caps: every model request checked before it is sent, shared ledger
+│   ├── deps/                # dependency audit for this repo (OSV.dev + npm audit)
 │   ├── dependency/          # dependency agent (deferred; stays as is)
 │   └── README.md, DEPENDENCY_AGENT.md
 ├── tests/                   # pytest: agents (triage, fixer, dependency, llm router, mock)
-├── mcp/                     # (if time) MCP tools over the agents' HTTP adapter
+├── (agents/mcp_server.py)   # MCP tools over the agents' HTTP adapter (not a top-level mcp/: it would shadow the SDK)
 └── frontend/                # control-room view (Squawk); src/live/ = SpacetimeDB data source, src/mock/ = fallback
     └── src/scene/           # three.js hall, racks, parts, Staff.tsx (gull model), Tech.tsx (hardware repairs), FixerPopups.tsx (software fixes), Building.tsx + airlock.ts (walls, interlocked entrance, corridor, tech office), Doors.tsx
 ```
@@ -176,6 +180,11 @@ cp .env.example .env                # then put the Brev endpoint, the OpenRouter
 python -m agents.check_setup        # both model endpoints, a tool-call round trip, SpacetimeDB reachability (--no-llm: no model requests)
 python -m agents.squawk_http setup  # once per database: the fixer's identity (token into .env), registered as fixer-agent
 python -m agents.fixer              # fixer agent: live backend when SPACETIME_DB is set, else the simulated hall (--scripted: no model requests; --mock; --once)
+python -m agents.squawk_http setup --agent update   # the update agent's identity
+python -m agents.patch --scripted   # update agent: advisories -> patch waves (live when SPACETIME_DB is set; --mock for the storyline)
+python -m agents.deps               # known vulnerabilities in this repo's Python and npm dependencies
+python -m agents.mcp_server         # Squawk's 7 tools over MCP for external agents (stdio; --http --port 8765)
+python -m agents --scripted         # on stage: the fixer and the update agent together against the live backend
 pytest                              # agent tests
 ```
 

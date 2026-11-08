@@ -188,6 +188,9 @@ export const CAN_REQUEST: Record<Role, WorkKind[]> = {
   // The fixer repairs single nodes itself; anything else it books on a requester's behalf,
   // and that check runs as the requester (book_for_others).
   remediation_agent: ['node_repair'],
+  // Software only: patches and firmware, never hands-on or facility work. A refused routine
+  // wave is rebooked by the fixer once its blockers clear.
+  update_agent: ['sw_online', 'sw_exclusive', 'switch_firmware'],
   facility: [],
   viewer: [],
 };
@@ -222,7 +225,7 @@ export const CAN_DO: Record<Action, Role[]> = {
   finish: ['scheduler_agent', 'shift_lead', 'admin'],
   protect: ['scheduler_agent', 'shift_lead', 'admin'],
   book_for_others: ['remediation_agent', 'shift_lead', 'admin'],
-  record: ['remediation_agent', 'scheduler_agent', 'cooling_agent', 'shift_lead', 'admin'],
+  record: ['remediation_agent', 'update_agent', 'scheduler_agent', 'cooling_agent', 'shift_lead', 'admin'],
   clock: ['shift_lead', 'admin'],
   present: ['shift_lead', 'admin'],
   admin: ['admin'],
@@ -236,6 +239,7 @@ export const ACTOR_KIND: Record<Role, ActorKind> = {
   scheduler_agent: 'scheduler',
   cooling_agent: 'cooling',
   remediation_agent: 'fixer',
+  update_agent: 'scheduler', // the same icon as the scenario's scripted update agent
   facility: 'facility',
   viewer: 'facility',
 };

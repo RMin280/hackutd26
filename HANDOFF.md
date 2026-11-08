@@ -103,6 +103,7 @@ Add new feedback here. New ideas from mentors go to the roadmap (`DESIGN.md` §1
 - Fixer agent (Nemotron) in the main demo — agent **built** on a simulated hall; **to do:** backend additions (DESIGN.md §8.4), the HTTP adapter, the view additions (DESIGN.md §10.1), scenario steps 7–9
 - Two-machine deployment over Tailscale — **to do** (DESIGN.md §10.5, checklist in §8 below)
 - MCP server (7 tools) — **if time, last**
+- **Update agent (Nemotron) + credit caps + dependency audit** — **built 2026-11-08** at Reid's request (security advisories → patch waves through Squawk; `agents/patch/`, `agents/budget.py`, `agents/deps/`, backend role `update_agent`). Uses only the software *maintenance* scopes already in Build; the fleet inventory lives agent-side as simulated data, so the software-layers roadmap item (OS/VM/container map, symptom routing) is still roadmap. Never a dependency of the minimum demo.
 
 **Roadmap only:** the dependency agent (built, deferred), job allocator, signed approvals and full security hardening, shift handoff, software layers (OS/VM/container), look-ahead and a deterministic playbook engine, grid mode, AI technician assistant, real integrations, SSO, multi-site.
 
@@ -156,7 +157,13 @@ This runs end to end on the backend (`scenario_*`) and in the view's mock today.
 8. **Deployment** (DESIGN.md §10.5): Tailscale on both machines; on machine A, SpacetimeDB listening on its tailnet address, the module published as `squawk`, the fixer with `SPACETIME_HOST` and its token in `.env`, the Brev port-forward; on machine B, `frontend/.env.local` pointing at machine A. Test from machine B before the rehearsal. Fallbacks: the view's mock (no backend) and `--scripted` (no model).
 9. **Halfway checkpoint:** if the minimum demo doesn't run end to end *in live mode on the two machines*, cut to it (it already runs on the mock and on the backend separately).
 10. **At ~75% of the time:** feature freeze. Rehearse, re-measure the scale numbers on the demo machine, put them in the pitch. Check the hall's dark tones on the venue screen; bundle Roboto (`npm i @fontsource/roboto`) so the font doesn't depend on venue Wi-Fi.
-11. If time remains: the MCP server (7 tools) over the same adapter; side-by-side naive vs Squawk mode.
+11. If time remains: side-by-side naive vs Squawk mode. The MCP server (7 tools) is **built** (`python -m agents.mcp_server`, `agents/README.md`).
+12. **Update agent + Nemotron credits** (built overnight 2026-11-08; details in `agents/README.md`, notes in the shared session notes):
+    - **Republish the module** (`bash dev.sh cloud publish` / `bash dev.sh publish`): it adds the `update_agent` role (no schema change, data kept).
+    - **Model key:** put it in `.env` (`OPENROUTER_API_KEY`, or `NVIDIA_API_KEY` with `LLM_PROVIDER=nvidia`). For paid OpenRouter credits, set the primary to `LLM_PROVIDER=openrouter`, `AGENT_MODEL=nvidia/nemotron-3-super-120b-a12b` (≈$0.003 per agent run). Caps default to $20 lifetime / $5 a day; `python -m agents.check_setup` shows the spend.
+    - **Identity:** `python -m agents.squawk_http setup --agent update --server maincloud` (the CLI must be the database's admin).
+    - **Run:** `python -m agents.patch --scripted --once` first, then without `--scripted`. On stage, run it alongside the fixer.
+    - **Frontend dependency:** `python -m agents.deps` flags Vite 5 (dev-server advisories, high). The fix is Vite 8, a major upgrade: test it on a branch or accept it for the demo (it only affects `npm run dev`, not a production build).
 
 ## 9. Open questions
 

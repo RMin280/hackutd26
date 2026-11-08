@@ -23,6 +23,7 @@ import openai
 from openai import OpenAI
 from openai.types.chat import ChatCompletion, ChatCompletionMessage
 
+from .budget import Budget, BudgetExceeded
 from .config import Endpoint, Settings
 
 log = logging.getLogger(__name__)
@@ -52,6 +53,7 @@ FAILOVER_ERRORS: tuple[type[Exception], ...] = (
     openai.AuthenticationError,  # 401
     openai.PermissionDeniedError,  # 403
     EndpointNotConfigured,
+    BudgetExceeded,  # the credit cap: a free backup may still answer, else fail closed
 )
 
 
@@ -64,6 +66,8 @@ def make_client(
 ) -> OpenAI:
     if endpoint.is_openrouter and not endpoint.api_key:
         raise EndpointNotConfigured("OPENROUTER_API_KEY is not set in .env.")
+    if endpoint.provider == "nvidia" and not endpoint.api_key:
+        raise EndpointNotConfigured("NVIDIA_API_KEY is not set in .env (a key from build.nvidia.com, starting nvapi-).")
     if not endpoint.model:
         var = "AGENT_MODEL" if endpoint.role == "primary" else "BACKUP_AGENT_MODEL"
         raise EndpointNotConfigured(f"{var} is not set in .env (use a name the server lists at /v1/models).")
@@ -90,7 +94,8 @@ def _messages_for(endpoint: Endpoint, messages: list[dict[str, Any]]) -> list[di
 
 def _extra_body(endpoint: Endpoint, settings: Settings) -> dict[str, Any]:
     if endpoint.is_openrouter:
-        body: dict[str, Any] = {"reasoning": {"effort": settings.reasoning_effort}}
+        # usage.include: OpenRouter reports each request's real cost, which the budget records.
+        body: dict[str, Any] = {"reasoning": {"effort": settings.reasoning_effort}, "usage": {"include": True}}
         if settings.fallback_models:
             body["models"] = [endpoint.model, *settings.fallback_models]
         return body
@@ -155,8 +160,10 @@ class ModelRouter:
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
         clients: dict[str, OpenAI] | None = None,
+        budget: Budget | None = None,
     ) -> None:
         self.settings = settings
+        self.budget = budget or Budget(settings.budget, settings.usage_file or None, paid_fallbacks=bool(settings.fallback_models))
         self._clock = clock
         self._sleep = sleep
         self._clients: dict[str, OpenAI] = dict(clients or {})
@@ -196,16 +203,25 @@ class ModelRouter:
             raise ModelUnavailable(f"Primary: {reason} Backup: {describe_error(exc, backup)}") from exc
 
     def _send(self, endpoint: Endpoint, messages, tools, tool_choice, max_tokens) -> ChatCompletion:
-        self._pace(endpoint)
-        return complete(
-            self._client(endpoint),
-            endpoint,
-            self.settings,
-            messages,
-            tools=tools,
-            tool_choice=tool_choice,
-            max_tokens=max_tokens,
-        )
+        reserved = self.budget.check(endpoint, messages, max_tokens)  # before anything is sent
+        try:
+            self._pace(endpoint)
+            response = complete(
+                self._client(endpoint),
+                endpoint,
+                self.settings,
+                messages,
+                tools=tools,
+                tool_choice=tool_choice,
+                max_tokens=max_tokens,
+            )
+        except BaseException as exc:
+            # A timeout or an empty reply may still be billed: keep the worst case. A refusal
+            # before any work (no connection, 401, 403, 404, 429, bad request) is refunded.
+            self.budget.settle(endpoint, reserved, failed=isinstance(exc, (openai.APITimeoutError, openai.InternalServerError)))
+            raise
+        self.budget.settle(endpoint, reserved, response)
+        return response
 
     def _pace(self, endpoint: Endpoint) -> None:
         """Space requests to OpenRouter's free models under their 20/min limit."""
@@ -224,6 +240,9 @@ class ModelRouter:
                 # With a backup waiting, fail over fast: short connect timeout, no retries.
                 timeout = httpx.Timeout(self.settings.primary_timeout, connect=5.0)
                 self._clients[endpoint.role] = make_client(endpoint, timeout=timeout, max_retries=0)
+            elif self.budget.worst_case(endpoint, [], 1) > 0:
+                # Metered: no hidden SDK retries, each would be a request the budget didn't check.
+                self._clients[endpoint.role] = make_client(endpoint, max_retries=0)
             else:
                 self._clients[endpoint.role] = make_client(endpoint)
         return self._clients[endpoint.role]
@@ -245,10 +264,10 @@ def describe_error(exc: Exception, endpoint: Endpoint) -> str:
     if isinstance(exc, openai.APIStatusError):
         body = exc.body if isinstance(exc.body, dict) else {}
         detail = str(body.get("message") or exc.message or "")[:300]
-    where = "OpenRouter" if endpoint.is_openrouter else endpoint.base_url
+    where = "OpenRouter" if endpoint.is_openrouter else "NVIDIA's API" if endpoint.provider == "nvidia" else endpoint.base_url
     local = any(h in endpoint.base_url for h in ("localhost", "127.0.0.1"))
 
-    if isinstance(exc, EndpointNotConfigured):
+    if isinstance(exc, (EndpointNotConfigured, BudgetExceeded)):
         return str(exc)
     if isinstance(exc, openai.AuthenticationError):
         if endpoint.is_openrouter:

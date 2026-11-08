@@ -30,7 +30,7 @@ VITE_MODE=""                          # the view's env file: .env.local, or .env
 if [ "${1:-}" = cloud ]; then
   shift
   # Maincloud's database names are global, so ours carries the event's name.
-  DB="${SQUAWK_DB:-squawk-hackutd26}"
+  DB="${SQUAWK_DB:-hackutd26-2he95}"
   SERVER=maincloud
   URI=https://maincloud.spacetimedb.com
   VITE_MODE=maincloud

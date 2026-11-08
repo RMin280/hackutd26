@@ -34,6 +34,7 @@ export type Role =
   | 'scheduler_agent'
   | 'cooling_agent'
   | 'remediation_agent' // the Nemotron fixer (DESIGN.md §8.2)
+  | 'update_agent' // the Nemotron update agent: software patches only (agents/patch)
   | 'facility'
   | 'viewer';
 export const ROLES: readonly Role[] = [
@@ -43,6 +44,7 @@ export const ROLES: readonly Role[] = [
   'scheduler_agent',
   'cooling_agent',
   'remediation_agent',
+  'update_agent',
   'facility',
   'viewer',
 ];
