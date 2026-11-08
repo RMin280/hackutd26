@@ -38,4 +38,7 @@ export default __t.row({
   offlineNodes: __t.array(__t.string()).name("offline_nodes"),
   nodeCount: __t.u32().name("node_count"),
   approvedBy: __t.string().name("approved_by"),
+  routine: __t.bool(),
+  note: __t.string(),
+  bookedBy: __t.string().name("booked_by"),
 });

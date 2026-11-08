@@ -12,4 +12,5 @@ import {
 
 export default {
   id: __t.u64(),
+  note: __t.string(),
 };

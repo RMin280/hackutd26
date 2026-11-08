@@ -13,6 +13,7 @@ import { Parts } from './Parts';
 import { Containment, Floor, FloorLabels } from './Floor';
 import { FeedLines, ProtectedZones, SelectionOutline } from './Overlays';
 import { Staff } from './Staff';
+import { Tech } from './Tech';
 import { HotAisleDoors } from './Doors';
 
 const { ACTION } = CameraControlsImpl;
@@ -194,6 +195,7 @@ export function Hall() {
       <Racks />
       <Parts layout={layout} />
       <Staff />
+      <Tech layout={layout} />
       <Containment />
       <HotAisleDoors />
       <FloorLabels parts={layout} />

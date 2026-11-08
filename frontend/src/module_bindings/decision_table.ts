@@ -23,4 +23,7 @@ export default __t.row({
   focusIds: __t.array(__t.string()).name("focus_ids"),
   focusParts: __t.array(__t.string()).name("focus_parts"),
   work: __t.u64(),
+  type: __t.string(),
+  subject: __t.string(),
+  data: __t.string(),
 });

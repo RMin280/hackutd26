@@ -7,6 +7,7 @@ import { create } from 'zustand';
 import type { DecisionEvent, FocusTarget, Selection, Site, World } from './model/types';
 import { buildSite } from './mock/site';
 import { INTRO_CAPTION, SCENARIOS, initialWorld, type Mode } from './mock/scenario';
+import { repairWorld, type RepairTarget } from './mock/repair';
 
 export interface Hover {
   label: string;
@@ -35,6 +36,7 @@ interface AppState {
   playing: boolean;
   follow: boolean;
   staff: boolean; // the seagull crew walking the hall (decoration only)
+  tech: boolean; // the tech gull on duty: walks to whatever is broken and repairs it (T)
   panels: Record<PanelName, boolean>; // true = open
 
   setMode: (m: Mode) => void;
@@ -50,6 +52,9 @@ interface AppState {
   setHover: (h: Hover | null) => void;
   togglePanel: (p: PanelName) => void;
   toggleStaff: () => void;
+  toggleTech: () => void;
+  /** Marks a failed or degraded node or part repaired. The mock does it here; live mode asks the backend. */
+  repair: (target: RepairTarget) => void;
 }
 
 const site = buildSite();
@@ -67,6 +72,7 @@ export const useStore = create<AppState>((set, get) => ({
   playing: false,
   follow: true,
   staff: true,
+  tech: false,
   panels: { sidebar: true, feed: true, metrics: true, caption: true, legend: true },
 
   setMode: (mode) => {
@@ -156,6 +162,14 @@ export const useStore = create<AppState>((set, get) => ({
   setHover: (hover) => set({ hover }),
   togglePanel: (p) => set((s) => ({ panels: { ...s.panels, [p]: !s.panels[p] } })),
   toggleStaff: () => set((s) => ({ staff: !s.staff })),
+  toggleTech: () => set((s) => ({ tech: !s.tech })),
+
+  repair: (target) => {
+    const s = get();
+    const done = repairWorld(s.site, s.world, target);
+    if (!done) return;
+    set({ world: done.world, events: [{ ...done.event, seq: s.events.length + 1, time: done.world.now }, ...s.events] });
+  },
 }));
 
 export const stepCount = (mode: Mode) => SCENARIOS[mode].length;

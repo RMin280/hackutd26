@@ -69,6 +69,9 @@ export const Decision = __t.object("Decision", {
   focusIds: __t.array(__t.string()),
   focusParts: __t.array(__t.string()),
   work: __t.u64(),
+  type: __t.string(),
+  subject: __t.string(),
+  data: __t.string(),
 });
 export type Decision = __Infer<typeof Decision>;
 
@@ -240,6 +243,9 @@ export const Work = __t.object("Work", {
   offlineNodes: __t.array(__t.string()),
   nodeCount: __t.u32(),
   approvedBy: __t.string(),
+  routine: __t.bool(),
+  note: __t.string(),
+  bookedBy: __t.string(),
 });
 export type Work = __Infer<typeof Work>;
 

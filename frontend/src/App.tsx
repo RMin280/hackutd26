@@ -110,6 +110,8 @@ function useKeys() {
         s.setMode('squawk');
       } else if (e.key === 'g' || e.key === 'G') {
         s.toggleStaff();
+      } else if (e.key === 't' || e.key === 'T') {
+        s.toggleTech();
       }
     };
     window.addEventListener('keydown', onKey);

@@ -1,6 +1,7 @@
 // Squawk's floor staff: chunky toy seagulls, in the spirit of the articulated pocket-pet prints,
 // waddling the aisles. Pure decoration: nothing reads their state, they take no clicks and they
 // never touch a decision. In a hot aisle they sweat and flap. Press G to hide or show them.
+// (The tech, in the azure hard hat, is the one gull that does a job: see Tech.tsx.)
 //
 // Built from primitives in code. Each body segment is one merged geometry with vertex colours,
 // drawn instanced for the whole crew (a dozen draw calls for five gulls). The waddle is
@@ -10,22 +11,28 @@ import { useEffect, useMemo } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useStore } from '../store';
+import { C } from '../theme';
 import { AISLE, PAIR_COUNT, ROW_X0, ROW_X1, coldAisleZs, hotAisleZ } from './layout';
 import { inForeground } from './camera';
-import { walkers } from './walkers';
+import { walkerLists, type Walker } from './walkers';
 import { cone, cyl, merge, piece, sphere, type V3 } from './geo';
+import { standFacing, stepToward, type GullState } from './gait';
+
+export type { GullState } from './gait';
 
 const noRaycast = () => null;
 /** Staff live on their own layer: the main camera sees it, the baked contact shadows and picking don't. */
 export const STAFF_LAYER = 1;
 
 // Print-filament colours from the reference toy: warm white, mid grey, black tips, orange bill and feet.
+// The tech's hard hat is Squawk azure: the product acting.
 const COL = {
   white: '#f6f5f1',
   grey: '#a2a7af',
   black: '#1c1d21',
   orange: '#f28c28',
   eye: '#111114',
+  hat: C.azure,
 };
 const SWEAT = '#9fe3ff';
 
@@ -36,8 +43,6 @@ const LEG = 0.16; // hip to ankle
 const ANKLE = 0.035; // foot thickness under the ankle
 const HIP_X = 0.11;
 const STEP = 0.55; // leg swing, radians, each way
-const STRIDE = 0.42; // metres per cycle: two quick little steps
-const TURN_RATE = 3.4; // rad/s
 const SWEAT_POOL = 96;
 
 // Body segment: origin at the hips; an egg lying slightly long front to back.
@@ -78,6 +83,16 @@ function tailSeg() {
 
 // Leg: origin at the hip; a stubby orange post (it runs a little way up into the body).
 const legSeg = () => merge([piece(cyl(0.045, 0.05, LEG + 0.04, 12), COL.orange, [0, -LEG / 2 + 0.02, 0])]);
+
+// Hard hat (the tech): head space, like the head segment. A shell over the crown (the nub hides
+// inside it), a ridge along the top, and a brim that dips a little at the front.
+function hatSeg() {
+  return merge([
+    piece(sphere(24, 14), COL.hat, [0, 0.37, 0.02], [0, 0, 0], [0.235, 0.19, 0.255]),
+    piece(sphere(16, 10), COL.hat, [0, 0.37, 0.02], [0, 0, 0], [0.055, 0.205, 0.262]),
+    piece(cyl(0.285, 0.285, 0.024, 28), COL.hat, [0, 0.362, 0.05], [0.06, 0, 0], [1, 1, 1.12]),
+  ]);
+}
 
 // Foot: origin at the ankle; a flat webbed paddle pointing forward, three toe bumps on the rim.
 function footSeg() {
@@ -153,22 +168,7 @@ const GULLS: GullDef[] = [
 
 // ---------- the crew ----------
 
-export interface GullState {
-  seg: number; // index of the waypoint being walked to
-  x: number;
-  z: number;
-  yaw: number;
-  phase: number;
-  walk: number; // 0 standing .. 1 walking
-  pause: number;
-  hot: number; // 0 .. 1, eases in and out at the hot-aisle doors
-  spawn: number;
-  seed: number;
-}
-
-const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 const approach = (v: number, to: number, step: number) => (Math.abs(to - v) <= step ? to : v + Math.sign(to - v) * step);
-const turnToward = (yaw: number, to: number, step: number) => yaw + THREE.MathUtils.clamp(wrap(to - yaw), -step, step);
 const lerp = THREE.MathUtils.lerp;
 
 function startState(def: GullDef, i: number): GullState {
@@ -189,6 +189,7 @@ function startState(def: GullDef, i: number): GullState {
     walk: 1,
     pause: 0,
     hot: 0,
+    work: 0,
     spawn: 0,
     seed: i * 2.39 + 0.5,
   };
@@ -198,9 +199,17 @@ const inHotAisle = (x: number, z: number) => x > ROW_X0 + 0.1 && x < ROW_X1 - 0.
 
 type SegName = 'body' | 'head' | 'tail' | 'wing' | 'leg' | 'foot';
 
+export interface CrewOptions {
+  /** Azure hard hats: the tech. */
+  hat?: boolean;
+}
+
 export interface Crew {
   group: THREE.Group;
   gulls: GullState[];
+  /** Where this crew is on the floor, for the hot-aisle doors (empty while hidden). */
+  walkers: Walker[];
+  /** Walks the patrol routes. The tech walks its own (rounds.ts) and skips this. */
   advance: (dt: number) => void;
   /** `hide(x, z)` drops a gull from this frame, e.g. one waddling right past the lens. */
   pose: (t: number, dt: number, hide?: (x: number, z: number) => boolean) => void;
@@ -216,11 +225,12 @@ const tmpP = new THREE.Vector3();
 const tmpS = new THREE.Vector3();
 const ONE = new THREE.Vector3(1, 1, 1);
 
-export function buildCrew(defs: GullDef[] = GULLS): Crew {
+export function buildCrew(defs: GullDef[] = GULLS, opts: CrewOptions = {}): Crew {
   const count = defs.length;
   const group = new THREE.Group();
   const disposables: { dispose: () => void }[] = [];
   const own = <T extends { dispose: () => void }>(x: T) => (disposables.push(x), x);
+  const walkers: Walker[] = [];
 
   // Matte like printed filament: soft shading, no outlines.
   const skin = own(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.62, metalness: 0 }));
@@ -250,6 +260,8 @@ export function buildCrew(defs: GullDef[] = GULLS): Crew {
     m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     seg[name] = addMesh(m);
   }
+  const hat = opts.hat ? addMesh(new THREE.InstancedMesh(own(hatSeg()), skin, count)) : null;
+  hat?.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 
   // Sweat: a comic drop on the temple while hot, and droplets flicked off the head.
   const dropGeo = own(
@@ -279,30 +291,12 @@ export function buildCrew(defs: GullDef[] = GULLS): Crew {
       const wp = r[g.seg];
       if (g.pause > 0) {
         g.pause -= dt;
-        if (wp.face !== undefined) g.yaw = turnToward(g.yaw, wp.face, TURN_RATE * 0.6 * dt);
-        g.walk = approach(g.walk, 0, dt * 4);
+        standFacing(g, wp.face, dt);
         if (g.pause <= 0) g.seg = (g.seg + 1) % r.length;
-      } else {
-        const dx = wp.x - g.x;
-        const dz = wp.z - g.z;
-        const d = Math.hypot(dx, dz);
-        if (d < 0.02) {
-          if (wp.pause) g.pause = wp.pause * (0.8 + 0.4 * Math.abs(Math.sin(g.seed * 7.1 + g.phase)));
-          else g.seg = (g.seg + 1) % r.length;
-        } else {
-          const want = Math.atan2(dx, dz);
-          const off = Math.abs(wrap(want - g.yaw));
-          g.yaw = turnToward(g.yaw, want, TURN_RATE * dt);
-          const aligned = off < 0.5;
-          const step = Math.min(d, defs[i].speed * (aligned ? 1 : 0.12) * dt);
-          g.x += (dx / d) * step;
-          g.z += (dz / d) * step;
-          g.walk = approach(g.walk, aligned ? 1 : 0.45, dt * 4);
-          g.phase += (step / STRIDE) * Math.PI * 2 + (aligned ? 0 : dt * 6);
-        }
+      } else if (stepToward(g, wp.x, wp.z, defs[i].speed, dt)) {
+        if (wp.pause) g.pause = wp.pause * (0.8 + 0.4 * Math.abs(Math.sin(g.seed * 7.1 + g.phase)));
+        else g.seg = (g.seg + 1) % r.length;
       }
-      const hot = inHotAisle(g.x, g.z);
-      g.hot = approach(g.hot, hot ? 1 : 0, dt * (hot ? 1.2 : 0.6));
     });
   };
 
@@ -323,11 +317,14 @@ export function buildCrew(defs: GullDef[] = GULLS): Crew {
   const smooth = THREE.MathUtils.smoothstep;
 
   const pose = (t: number, dt: number, hide?: (x: number, z: number) => boolean) => {
+    walkerLists.add(walkers);
     walkers.length = count;
     gulls.forEach((g, i) => {
       const w = walkers[i] ?? (walkers[i] = { x: 0, z: 0 });
       w.x = g.x;
       w.z = g.z;
+      const inHot = inHotAisle(g.x, g.z);
+      g.hot = approach(g.hot, inHot ? 1 : 0, dt * (inHot ? 1.2 : 0.6));
 
       if (hide?.(g.x, g.z)) {
         for (const name of Object.keys(seg) as SegName[]) {
@@ -336,13 +333,16 @@ export function buildCrew(defs: GullDef[] = GULLS): Crew {
             seg[name].setMatrixAt(i * 2 + 1, zero);
           } else seg[name].setMatrixAt(i, zero);
         }
+        hat?.setMatrixAt(i, zero);
         drops.setMatrixAt(i, zero);
         blobs.setMatrixAt(i, zero);
         return;
       }
 
       const a = g.walk;
-      const idle = 1 - a;
+      // Standing about, a gull looks around; at work it keeps its eyes on the job and pecks.
+      const idle = (1 - a) * (1 - g.work);
+      const peck = g.work * (0.3 + 0.24 * Math.sin(t * 15 + g.seed));
       const s = Math.sin(g.phase);
       const c = Math.cos(g.phase);
       const hot = smooth(g.hot, 0, 1);
@@ -356,16 +356,16 @@ export function buildCrew(defs: GullDef[] = GULLS): Crew {
 
       root.compose(tmpP.set(g.x, 0, g.z), tmpQ.setFromAxisAngle(UP, g.yaw), tmpS.setScalar(S));
       link(mPelvis, root, sway, hipY, 0);
-      link(mBody, mPelvis, 0, 0, 0, 0.1 * a + 0.05 * hot, 0.07 * s * a, roll);
+      link(mBody, mPelvis, 0, 0, 0, 0.1 * a + 0.05 * hot + 0.12 * g.work, 0.07 * s * a, roll);
       // The head bobs twice a cycle like a pigeon's, counter-rolls to stay level, droops in the heat,
-      // and looks around when standing.
+      // looks around when standing, and pecks away at a repair.
       link(
         mHead,
         mBody,
         0,
         0.42,
         0.12,
-        0.1 * Math.sin(2 * g.phase) * a - 0.09 * hot + 0.04 * idle * Math.sin(t * 1.3 + g.seed),
+        0.1 * Math.sin(2 * g.phase) * a - 0.09 * hot + 0.04 * idle * Math.sin(t * 1.3 + g.seed) + peck,
         idle * 0.6 * Math.sin(t * 0.7 + g.seed * 3),
         -0.6 * roll + idle * 0.12 * Math.sin(t * 0.45 + g.seed * 2),
       );
@@ -385,6 +385,7 @@ export function buildCrew(defs: GullDef[] = GULLS): Crew {
       }
       seg.body.setMatrixAt(i, mBody);
       seg.head.setMatrixAt(i, mHead);
+      hat?.setMatrixAt(i, mHead);
       seg.tail.setMatrixAt(i, mTail);
 
       // sweat
@@ -423,14 +424,17 @@ export function buildCrew(defs: GullDef[] = GULLS): Crew {
     });
 
     for (const m of [...Object.values(seg), drops, droplets, blobs]) m.instanceMatrix.needsUpdate = true;
+    if (hat) hat.instanceMatrix.needsUpdate = true;
   };
 
   return {
     group,
     gulls,
+    walkers,
     advance,
     pose,
     dispose: () => {
+      walkerLists.delete(walkers);
       for (const d of disposables) d.dispose();
     },
   };
@@ -445,16 +449,10 @@ export function Staff() {
   useEffect(() => {
     camera.layers.enable(STAFF_LAYER);
   }, [camera]);
-  useEffect(
-    () => () => {
-      crew.dispose();
-      walkers.length = 0;
-    },
-    [crew],
-  );
+  useEffect(() => () => crew.dispose(), [crew]);
   useFrame(({ clock, camera: cam, controls }, delta) => {
     if (!show) {
-      walkers.length = 0;
+      crew.walkers.length = 0;
       return;
     }
     const dt = Math.min(delta, 0.05);

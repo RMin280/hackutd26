@@ -183,6 +183,9 @@ function takeOverControls(): void {
       useStore.setState({ mode, stepIndex: -1, playing: false });
       call('scenarioStart', { mode });
     },
+    // The tech gull's repairs: an ordinary state change, checked and recorded by the backend.
+    repair: ({ kind, id }) =>
+      kind === 'part' ? call('setPartState', { part: id, state: 'ok' }) : call('setNodeState', { node: id, state: 'ok' }),
   });
 }
 

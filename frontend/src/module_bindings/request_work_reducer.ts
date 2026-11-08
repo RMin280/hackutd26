@@ -17,4 +17,7 @@ export default {
   durationMin: __t.u32(),
   dryRun: __t.bool(),
   ticket: __t.string(),
+  routine: __t.bool(),
+  note: __t.string(),
+  onBehalfOf: __t.string(),
 };

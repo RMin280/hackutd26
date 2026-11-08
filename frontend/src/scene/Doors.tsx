@@ -7,7 +7,7 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { C } from '../theme';
 import { AISLE, PAIR_COUNT, RACK, ROW_X0, ROW_X1, hotAisleZ } from './layout';
-import { walkers } from './walkers';
+import { walkerLists } from './walkers';
 import { box, merge, place } from './geo';
 
 const noRaycast = () => null;
@@ -100,10 +100,12 @@ export function buildDoors(): Doors {
       const x = ends[d % 2];
       const z = hotAisleZ(Math.floor(d / 2));
       let near = false;
-      for (const w of walkers) {
-        if (Math.hypot(w.x - x, w.z - z) < TRIGGER) {
-          near = true;
-          break;
+      search: for (const walkers of walkerLists) {
+        for (const w of walkers) {
+          if (Math.hypot(w.x - x, w.z - z) < TRIGGER) {
+            near = true;
+            break search;
+          }
         }
       }
       const target = near ? 1 : 0;

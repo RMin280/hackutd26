@@ -20,6 +20,7 @@ npm run build      # typecheck + production build
 | `Esc` | Close the card, then back to the overview |
 | `1` / `2` | Naive scheduler / Squawk mode |
 | `G` | Hide / show the seagull crew |
+| `T` | Put the tech on / off duty: it walks to each failure and repairs it (changes the hall: see below) |
 
 Moving around the hall (map-style): drag to pan along the floor, right-drag to rotate, scroll to zoom toward the cursor, `WASD` to move, `Q`/`E` to turn, hold `Shift` to go faster.
 
@@ -39,6 +40,14 @@ Squawk's floor staff are chunky toy seagulls in the spirit of the articulated po
 
 Each hot aisle has sliding doors at both ends (`src/scene/Doors.tsx`): two leaves that slide apart along the rack ends when a gull comes near and close again once it has passed.
 
+### The tech
+
+One gull has a job: the tech, in an azure hard hat, waiting at its post between the spines on the east side. Press `T` to put it on duty. It walks to the nearest failed or degraded node or part, works on it for a few seconds (pecking away, a ring at its feet filling up, sparks off the part), marks it repaired, then walks to the nearest one left; with nothing left it goes back to its post. `T` again calls it off, even mid-repair.
+
+- **Routes** (`src/scene/nav.ts`): the floor is a grid of 15 cm cells; racks and equipment are obstacles, grown by a gull's half-width, and cells close to equipment cost more, so routes keep to the middle of aisles and only take a hot aisle when that saves a lot. One run of Dijkstra's algorithm from where the gull stands gives the cheapest route to every reachable cell, so "nearest" means nearest on foot (a row of racks is usually in the way) and the route comes from the same run. The cell path is then pulled taut into a few straight legs. The planned route shows as azure dots on the floor.
+- **Order**: each time, the nearest repair left; that's not always the shortest tour of all of them, but it adapts as failures come and go.
+- **Repairs change the hall.** They go through the store's `repair` action: on the mock, `src/mock/repair.ts` sets the part or node back to ok; live, the backend's `set_part_state` / `set_node_state`, which records a row in the decision feed like any other state change. Repairing CDU-3 early changes the story: before the diagnosis, node-417's failure comes out isolated instead of a shared cause; before the cooling agent's request, CDU-4 is still refused (the protection lease) but no longer as the racks' last cooling feed. So put the tech on duty once that request has been refused, or on the diagnostics test bed. Its rounds are in `src/scene/rounds.ts`, tested with the planner in `../spacetimedb/test/view-tech.test.ts`.
+
 Every server panel carries two tiny LEDs at its right-hand end, a steady power light and an activity light that blinks in its own rhythm. Job nodes blink most, spares hardly at all, failed nodes go dark. They are a twinkle in close-ups and invisible from the overview.
 
 ## Design system
@@ -49,7 +58,7 @@ NMC² palette: black surfaces, azure `#2b9cfc` for the product acting (selection
 
 | Path | What |
 | --- | --- |
-| `src/scene/` | three.js scene: hall layout, racks + nodes (instanced), facility parts, aisles and containment, feed arcs, protection frames, camera shots and controls, the seagull crew (`Staff.tsx`) |
+| `src/scene/` | three.js scene: hall layout, racks + nodes (instanced), facility parts, aisles and containment, feed arcs, protection frames, camera shots and controls, the seagull crew (`Staff.tsx`), the tech (`Tech.tsx`, its rounds in `rounds.ts`, routes in `nav.ts`) |
 | `src/ui/` | HUD panels over the full-screen scene: sidebar, stat tiles, decision feed, detail card |
 | `src/store.ts` | App state. The only place data enters the view |
 | `src/model/types.ts` | Shapes the view consumes (site, world, events) |
@@ -59,7 +68,7 @@ NMC² palette: black surfaces, azure `#2b9cfc` for the product acting (selection
 
 ## Live mode (SpacetimeDB)
 
-The view holds no safety logic: it renders what `src/store.ts` holds. By default `src/mock/` fills it, as before. In live mode the SpacetimeDB backend in `../spacetimedb` does: the view subscribes to its tables, and Space, `R`, `1`/`2` and step clicks call the backend's scenario reducers (`scenario_next`, `scenario_start`, `scenario_goto`) instead of the mock.
+The view holds no safety logic: it renders what `src/store.ts` holds. By default `src/mock/` fills it, as before. In live mode the SpacetimeDB backend in `../spacetimedb` does: the view subscribes to its tables, and Space, `R`, `1`/`2` and step clicks call the backend's scenario reducers (`scenario_next`, `scenario_start`, `scenario_goto`) instead of the mock. The tech's repairs call `set_part_state` / `set_node_state` (the control room is a shift lead, which may).
 
 From the repo root, `bash dev.sh up` does all of this (with `bash dev.sh server` running in another terminal). By hand:
 

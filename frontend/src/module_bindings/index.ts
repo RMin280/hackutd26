@@ -38,7 +38,9 @@ import AdvanceClockReducer from "./advance_clock_reducer";
 import ApproveWorkReducer from "./approve_work_reducer";
 import ClaimAdminReducer from "./claim_admin_reducer";
 import DiagnoseFailureReducer from "./diagnose_failure_reducer";
+import FinishJobReducer from "./finish_job_reducer";
 import NaiveRestartReducer from "./naive_restart_reducer";
+import RecordEventReducer from "./record_event_reducer";
 import RegisterActorReducer from "./register_actor_reducer";
 import RejectWorkReducer from "./reject_work_reducer";
 import ReleaseWorkReducer from "./release_work_reducer";
@@ -125,6 +127,9 @@ const tablesSchema = __schema({
     indexes: [
       { accessor: 'seq', name: 'decision_seq_idx_btree', algorithm: 'btree', columns: [
         'seq',
+      ] },
+      { accessor: 'type', name: 'decision_type_idx_btree', algorithm: 'btree', columns: [
+        'type',
       ] },
     ],
     constraints: [
@@ -281,7 +286,9 @@ const reducersSchema = __reducers(
   __reducerSchema("approve_work", ApproveWorkReducer),
   __reducerSchema("claim_admin", ClaimAdminReducer),
   __reducerSchema("diagnose_failure", DiagnoseFailureReducer),
+  __reducerSchema("finish_job", FinishJobReducer),
   __reducerSchema("naive_restart", NaiveRestartReducer),
+  __reducerSchema("record_event", RecordEventReducer),
   __reducerSchema("register_actor", RegisterActorReducer),
   __reducerSchema("reject_work", RejectWorkReducer),
   __reducerSchema("release_work", ReleaseWorkReducer),
