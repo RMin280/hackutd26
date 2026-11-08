@@ -14,6 +14,7 @@ export function tablesOf(s: MemStore): Tables {
     margin: [...s.margins.values()],
     job: [...s.jobs.values()],
     work: [...s.works.values()],
+    assignment: [...s.assignments.values()],
     diagnosis: [...s.diagnoses.values()],
     placement: [...s.placements.values()],
     decision: s.decisions,

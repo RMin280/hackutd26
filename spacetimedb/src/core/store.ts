@@ -6,6 +6,7 @@
 import type {
   ActorRow,
   AisleRow,
+  AssignmentRow,
   AuditInput,
   ClaimRow,
   DecisionRow,
@@ -62,6 +63,8 @@ export interface Store {
   claimsOn(resource: string): ClaimRow[];
   insertClaim(row: New<ClaimRow>): void;
   deleteClaimsOf(work: bigint): void;
+  assignment(work: bigint): AssignmentRow | undefined;
+  putAssignment(row: AssignmentRow): void;
   failuresSince(min: number): FailureRow[];
   insertFailure(row: New<FailureRow>): void;
   diagnosis(id: bigint): DiagnosisRow | undefined;

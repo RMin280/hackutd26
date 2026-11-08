@@ -72,6 +72,48 @@ export interface Lease {
   end: number;
 }
 
+/** A request's life on the backend (spacetimedb/src/core/types.ts WorkStatus). */
+export type WorkStatus = 'simulated' | 'denied' | 'needs_approval' | 'granted' | 'active' | 'done' | 'cancelled' | 'rejected' | 'expired';
+
+/**
+ * One request as the backend keeps it, every status included (the work board reads these;
+ * `World.leases` is the live subset the hall draws). Live mode only: the mock has no work table.
+ */
+export interface WorkItem {
+  id: string;
+  ticket: string;
+  kind: string; // node_repair | rack_work | hot_aisle_work | facility_work | switch_firmware | sw_online | sw_exclusive | protection
+  category: 'hardware' | 'software' | 'protection';
+  targetKind: string; // node | rack | row | aisle | part | job
+  target: string;
+  targetLabel: string;
+  actor: string; // the requester (holder)
+  actorRole: string;
+  bookedBy?: string; // who booked it on the requester's behalf
+  requestedAt: number;
+  start: number;
+  end: number;
+  status: WorkStatus;
+  verdict: 'allow' | 'warn' | 'deny';
+  reason: string;
+  earliestSafe?: string;
+  blockers: string[];
+  racks: string[];
+  job?: string;
+  nodeCount: number;
+  approvedBy?: string;
+  routine: boolean;
+  note?: string;
+  // The work board's bookkeeping (assignment table): who took it on, who finished it.
+  assignee?: string;
+  assigneeRole?: string;
+  acceptedAt?: number;
+  completedBy?: string;
+  completedAt?: number;
+  repaired?: string[];
+  completionNote?: string;
+}
+
 export interface Diagnosis {
   node: string;
   classification: 'shared_cause' | 'isolated';
@@ -121,6 +163,7 @@ export interface DecisionEvent {
   focus: FocusTarget;
   type?: string; // what happened (backend EventType); the mock leaves it unset
   subject?: string; // the node, part, job or work it is about
+  data?: string; // the backend's JSON fields for the row (agents read them; the work board reads an agent's status)
 }
 
 export interface JobStatus {
@@ -143,6 +186,8 @@ export interface World {
   placed: string[]; // nodes added to the job by the last restart
   job: JobStatus;
   deniedRequests: number;
+  /** Every request the backend holds, for the work board. Unset on the mock. */
+  work?: WorkItem[];
 }
 
 export type Selection =

@@ -1,6 +1,6 @@
 # HANDOFF.md
 
-*Last updated: 2026-11-07, late. Merged across the `main`, `frontend`, `spacetime-init` and `nemotron-init` branches and updated with the decisions in §3. Read this first if you're picking up Squawk: a teammate joining, a new Claude Code session, or you after a break.*
+*Last updated: 2026-11-08, morning (status of `main` after the night's commits, plus the work board). Merged across the `main`, `frontend`, `spacetime-init` and `nemotron-init` branches and updated with the decisions in §3. Read this first if you're picking up Squawk: a teammate joining, a new Claude Code session, or you after a break.*
 
 ## 1. The project in 30 seconds
 
@@ -41,7 +41,7 @@ Merge order: `frontend` → `spacetime-init` → `nemotron-init` into one integr
 | `DESIGN.md` | Source of truth: facility model, algorithms, the agents and their contract (§8), security, demo scenario with the fixer (§10.2), deployment (§10.5), roadmap | **Current** (v0.6) |
 | `README.md`, `dev.sh` | How to run the backend and the view in live mode | **Current** (renamed on `integration`) |
 | `spacetimedb/` | Backend: SpacetimeDB module (tables + reducers), the interlock with work scopes, diagnosis, placement, the presenter's scenario, the diagnostics test bed, tests. Start with its `README.md` | **Current** (`spacetime-init`). First real `spacetime publish` against a live server: **confirm** |
-| `frontend/` | The control-room view (Squawk). `src/mock/` = offline fallback, `src/live/` = SpacetimeDB data source, `src/module_bindings/` = generated | Visuals on `frontend`, live mode on `spacetime-init`; **being combined** (§8 step 1) |
+| `frontend/` | The control-room view (Squawk). `src/mock/` = offline fallback, `src/live/` = SpacetimeDB data source, `src/module_bindings/` = generated, `src/ui/board/` = the work board | **Current** on `main`: visuals + live mode combined; the tech gull (`T`), the fixer's popups, the Scenario picker and the work board (`B`) |
 | `agents/` | Nemotron model router (Brev primary, OpenRouter free fallback), the fixer agent, the dependency agent (deferred), a simulated Squawk they run on, and the SpacetimeDB contract in `agents/README.md` | **Current** (`nemotron-init`); runs on its own simulated hall; **the HTTP adapter to the backend is the next build** |
 | `MERGE.md` | What the backend and the view add for the agents' work to show up, plus merge notes for `nemotron-init` | **Current**, except §6 (the SpacetimeDB branch exists: `spacetime-init`) and §5 (dependency agent deferred) |
 | `agents/DEPENDENCY_AGENT.md` | The dependency agent's design, storyline and backend/view needs | **Current**; deferred until the fixer is live |
@@ -79,7 +79,10 @@ Not in the repo, although older docs mentioned them: `FRONTEND.md`, the `.claude
 | **MCP server: if time, last** | Not needed for the demo; our agents call the backend's HTTP API directly. It's a thin wrapper over the same adapter, so it can be the last thing built |
 | **Two machines over Tailscale** (2026-11-07) | A dedicated box runs SpacetimeDB, the fixer and the Brev port-forward; the presenter's machine runs the view against it. Nothing on the public internet |
 | **Squawk, everywhere** (2026-11-07) | Screen, docs, pitch, database name and code identifiers. The old name is not used. The code rename is part of the merge (§8 step 2) |
-| **Seagull crew, hot-aisle doors, LEDs** | Decoration that makes the hall feel alive on screen; no state, no clicks, hidden with `G` |
+| **The crew became one tech gull** (2026-11-08, night) | No decorative crew any more: the only gull on the floor is the tech, who walks to failed or degraded hardware and repairs it through `set_part_state` / `set_node_state` (`T`). Repairs are real state changes, so put it on duty after the cooling agent's refusal, or on the test bed |
+| **Two operations scenarios instead of steps 7–9 in the big-job story** (2026-11-08, night) | `updates` and `maintenance` exercise the work scopes on screen and leave the fixer its issues (refused routine requests, a broken spare, a stale lock); the big-job scenario itself still ends at "node-422 fails, job unaffected" |
+| **SpacetimeDB Maincloud as the primary deployment** (2026-11-08, night) | The module runs as `squawk-hackutd26` on Maincloud, so the view and the agents point at it from any network; Tailscale stays the fallback. Lock open registration once the screens and agents are registered (`bash dev.sh cloud lock`) |
+| **Work board** (2026-11-08, morning; team decision) | A second page in the same app, `B` or `?view=work`: what the floor sees. Lanes of work with the trade and level it calls for, locks, who took what on, the agents' state, and Take it on / Complete over two bookkeeping reducers (`accept_work`, `complete_work`). It renders the backend's decisions and assigns nobody; the allocator stays roadmap (DESIGN.md §4.5) |
 
 ## 4. Mentor / judge feedback so far
 
@@ -152,10 +155,11 @@ This runs end to end on the backend (`scenario_*`) and in the view's mock today.
 3. **Run the whole thing live once:** `bash dev.sh server`, then `bash dev.sh up`; confirm the first real `spacetime publish` works (the module type-checks against the `spacetimedb` 2.14 SDK first; keep the npm package no newer than the CLI) and the view runs the backend scenario.
 4. **Backend additions for the fixer** — **done** on `integration` (`spacetimedb/test/agents.test.ts`, 48/48): `decision.type/subject/data` on every row, `record_event`, the `remediation_agent` role, `routine`/`note`/`on_behalf_of`, `finish_job`, `release_work(id, note)` with the stale-lock rule. The schema changed, so on the Mac: `bash dev.sh fresh` (republish with `--delete-data`) and `cd frontend && npm run bindings`.
 5. **Agents' HTTP adapter** — **done** (`agents/squawk_http.py`, `tests/test_squawk_http.py`): the `Squawk` interface over `/sql` and `/call/<reducer>`, a `ticket` per request. `python -m agents.squawk_http setup` gets the fixer's identity (token into `.env`) and registers it as `fixer-agent` through the admin CLI; `python -m agents.check_setup --no-llm` reads the feed as it. With `SPACETIME_DB` set, `python -m agents.fixer --scripted` runs live: on the `maintenance` scenario it takes node-1118 out of service and sends a tech, releases the stale protection lock, and rechecks the UPS-B request (still denied until the PDU-R10-A swap ends at T+4h15m, then `warn` → shift-lead approval). A shift lead's `approve_work` is still a person's step.
-6. **View additions for the fixer** (DESIGN.md §10.1): new `type`s in the feed, `plan`/`fixed`/`handoff` looks, `fixer` and `shift_lead` actor kinds, out-of-service nodes, the expandable plan row.
-7. **Scenario steps 7–9** on the backend (`scenario.ts`) and the fixer reacting to them live. Rehearse on Nemotron; keep `--scripted` as the on-stage fallback.
-8. **Deployment** (DESIGN.md §10.5): Tailscale on both machines; on machine A, SpacetimeDB listening on its tailnet address, the module published as `squawk`, the fixer with `SPACETIME_HOST` and its token in `.env`, the Brev port-forward; on machine B, `frontend/.env.local` pointing at machine A. Test from machine B before the rehearsal. Fallbacks: the view's mock (no backend) and `--scripted` (no model).
-9. **Halfway checkpoint:** if the minimum demo doesn't run end to end *in live mode on the two machines*, cut to it (it already runs on the mock and on the backend separately).
+6. **View additions for the fixer** — **mostly done** on `main`, in a different shape than DESIGN.md §10.1 first described: `plan`/`fixed`/`handoff` looks and the `fixer` actor kind are in; the fixer's plan, steps and outcome show as a popup over the hall (`FixerPopups.tsx`) rather than an expandable feed row; hardware dispatches go to the tech gull. Not done: the `shift_lead` actor kind in the view, a distinct out-of-service look for a held node (it is mapped and themed, shown on hover and the card).
+7. **Scenario steps 7–9** — **replaced** by the two operations scenarios (`updates`, `maintenance`; DESIGN.md §10.3b, `spacetimedb/README.md`), which leave the fixer its issues. The big-job scenario is unchanged. Still to do: run the fixer against the live database with the real model, not only `--scripted`.
+8. **Deployment** — **Maincloud first** (DESIGN.md §10.5, root `README.md`): `bash dev.sh cloud publish | fresh | frontend | up | lock | unlock | logs`; agents with `SPACETIME_HOST=https://maincloud.spacetimedb.com` and `SPACETIME_DB=squawk-hackutd26`. Confirm from a second machine that the view runs all three scenarios against it, then `bash dev.sh cloud lock`. Tailscale (two machines) stays the fallback; the view's mock and `--scripted` are the fallbacks after that.
+8b. **Work board** (2026-11-08) — **built, not yet run live**: backend `assignment` table + `accept_work` / `complete_work` (`spacetimedb/test/work-board.test.ts`), the view's `src/ui/board/` (`B`, `?view=work`; `spacetimedb/test/view-board.test.ts`). The schema gained a table, so on the Mac: `cd frontend && npm run bindings`, then publish (`bash dev.sh publish`, or `bash dev.sh cloud publish`: a new table is an additive change, data and identities stay), then open the board with `B` on the `maintenance` scenario and on a second device with `?view=work`.
+9. **Halfway checkpoint:** if the minimum demo doesn't run end to end *in live mode against Maincloud from the presenter's machine*, cut to it (it already runs on the mock and on the backend separately).
 10. **At ~75% of the time:** feature freeze. Rehearse, re-measure the scale numbers on the demo machine, put them in the pitch. Check the hall's dark tones on the venue screen; bundle Roboto (`npm i @fontsource/roboto`) so the font doesn't depend on venue Wi-Fi.
 11. If time remains: side-by-side naive vs Squawk mode. The MCP server (7 tools) is **built** (`python -m agents.mcp_server`, `agents/README.md`).
 12. **Update agent + Nemotron credits** (built overnight 2026-11-08; details in `agents/README.md`, notes in the shared session notes):
@@ -168,8 +172,8 @@ This runs end to end on the backend (`scenario_*`) and in the view's mock today.
 ## 9. Open questions
 
 1. Team owners for backend, agents, frontend and pitch; **who owns "no"** on scope. (The frontend + live-mode combination is assigned to Claude.)
-2. MCP server: confirmed skip-unless-time, or do we want it for the pitch line?
-3. Has `spacetime publish` run against a real server yet?
+2. ~~MCP server: confirmed skip-unless-time, or do we want it for the pitch line?~~ Built 2026-11-08 (`agents/mcp_server.py`); the pitch can say "agents connect over MCP or Squawk's API".
+3. ~~Has `spacetime publish` run against a real server yet?~~ The module is published on Maincloud as `squawk-hackutd26` (2026-11-08); confirm it answers from the presenter's machine.
 4. Is the Brev machine up, and which Nemotron size is on it (Nano / Super / Ultra)? Until then the demo runs on the free OpenRouter fallback (50 requests/day; the fixer storyline is ~24 calls).
 5. Steps 7–9 of the demo (DESIGN.md §10.2): adjust the beats while building.
 6. Demo hall size: is 1,280 nodes (160 spares) enough to make placement convincing?

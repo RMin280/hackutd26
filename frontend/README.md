@@ -20,6 +20,7 @@ npm run build      # typecheck + production build
 | `Esc` | Close the card, then back to the overview |
 | `1` / `2` | Naive scheduler / Squawk mode |
 | `T` | Put the tech on / off duty: it walks to each failure and repairs it (changes the hall: see below) |
+| `B` | The work board: what the floor sees (see below). `B` again, `Esc`, or the Hall / Work board switch at the top left comes back |
 
 Moving around the hall (map-style): drag to pan along the floor, right-drag to rotate, scroll to zoom toward the cursor, `WASD` to move, `Q`/`E` to turn, hold `Shift` to go faster.
 
@@ -55,6 +56,18 @@ Software fixes have no one to walk to: while the Nemotron fixer agent works on o
 
 Every server panel carries two tiny LEDs at its right-hand end, a steady power light and an activity light that blinks in its own rhythm. Job nodes blink most, spares hardly at all, failed nodes go dark. They are a twinkle in close-ups and invisible from the overview.
 
+## The work board (`B`, or `?view=work`)
+
+What a technician would see instead of the hall: every request the interlock has decided, as a list to scan with the one piece of work in hand open beside it (`src/ui/board/WorkBoard.tsx`; the pure logic in `src/ui/board/board.ts`, tested in `../spacetimedb/test/view-board.test.ts`). It renders what the backend decided and holds no safety logic. The Hall / Work board switch sits at the top left of both screens (`src/ui/ViewTabs.tsx`), and `B` does the same.
+
+- **The trade rail** on the left is the filter: one entry per trade with its glyph (chip, fan, bolt, network, gear) and how much open work calls for it. On a worker's screen the choice is remembered.
+- **The list:** lanes you can fold: Active now · Booked · Needs approval · Refused · Done (the last twelve, folded by default). One row per request: the trade glyph, the target, the kind of work, the trade with its level as three bars, who has it (or who asked), a lock glyph with the job when a protection lease covers its racks, *Routine* when the fixer may queue and rebook a refusal, its status, and for active work a bar showing how far its window has run. Click a row to open it.
+- **The detail:** a small map of the hall's ten rows with the rows this work touches lit (the central plant as the strip above), the window as a bar for active work, the actions (Take it on / Move to me, Complete with an optional note, Show in hall), then the facts (needs, window, requested by, approved by, nodes, lease id), the backend's one-line reason with the earliest safe time and what it waits on, the lock, and who took it on or finished it. `Esc` closes it; `Esc` again returns to the hall.
+- **Trade and level:** a presentation table (`board.ts`) that mirrors the backend's `send` per kind of work: hardware tech for node and rack work, mechanical tech for CDUs, chillers and hot aisles, electrical tech for PDUs, UPS, switchgear and utility, network engineer for leaf and spine switches, automation for software updates. L1 any tech on shift, L2 the trade's own tech, L3 senior or licensed (UPS, switchgear, utility, spines). The risk-aware allocator (DESIGN.md §11, Iteration 3) would score people instead; until then the board says what the work needs and people take it on.
+- **Context (nothing open):** the locks still running (racks, rows, until when), who is on the floor with what, and one row per agent seen in the feed (the Nemotron fixer, the scheduler agent, the cooling agent) with its state from its newest row (working, waiting, fixed, handed off, stopped), what it last did and when. "Last seen" is a time, not a judgment.
+- **Take it on / Complete:** the two buttons call the backend's `accept_work` and `complete_work` (`../spacetimedb/README.md`, "Reducers and roles"). Taking work on is bookkeeping on a lease the interlock already decided. Completing ends the lease now and, for hardware work, brings a failed or degraded target back as an ordinary state change (the repair's outcome, reported by whoever did it). The backend may still say no (wrong role, someone else's work, not started yet); its answer shows in the board's status line. Live mode only: on the mock the buttons are disabled.
+- **Worker mode, on a second screen:** open `http://localhost:5173/?view=work` on another device. No hall is drawn, so a tablet copes; the trade rail becomes a strip across the top and remembers the pick, your own work comes first, the agents are hidden, and a row's detail opens as a sheet from the bottom on a narrow screen. A browser that opens the board this way registers its SpacetimeDB identity as a technician (`Floor tech`), so it can take work on but not run the scenario; the same browser that already runs the control room keeps its shift-lead identity.
+
 ## Design system
 
 NMC² palette: black surfaces, azure `#2b9cfc` for the product acting (selection, protection, primary action), pale blue `#c0d1f1` for safe placements, sand gold `#ddb67c` for reduced backup, and red only for failures. Healthy states stay neutral, and red is only for what has failed: a denied request shows in azure (the interlock doing its job) and the shared-cause lines are gold. Type is Roboto (loaded from Google Fonts, with bundled Inter as the offline fallback) at weights 300, 400 and 500, on a 11 / 12 / 13 / 17 / 20 / 28 px scale. Surfaces are square and flush to the screen edges; only controls get a 2 px radius. The only gradients are the two scrims that keep text legible over the 3D scene.
@@ -64,7 +77,7 @@ NMC² palette: black surfaces, azure `#2b9cfc` for the product acting (selection
 | Path | What |
 | --- | --- |
 | `src/scene/` | three.js scene: hall layout, racks + nodes (instanced), facility parts, aisles and containment, feed arcs, protection frames, camera shots and controls, the gull model (`Staff.tsx`), the tech (`Tech.tsx`, its rounds in `rounds.ts`, routes in `nav.ts`), the fixer's popups (`FixerPopups.tsx`) |
-| `src/ui/` | HUD panels over the full-screen scene: sidebar, stat tiles, decision feed, detail card |
+| `src/ui/` | HUD panels over the full-screen scene: sidebar, stat tiles, decision feed, detail card; `board/` is the work board (`B`, `?view=work`) |
 | `src/store.ts` | App state. The only place data enters the view |
 | `src/model/types.ts` | Shapes the view consumes (site, world, events) |
 | `src/live/` | **Live mode.** Connection to the SpacetimeDB backend (`connection.ts`) and the row → `Site`/`World` mapping (`mapping.ts`) |
@@ -73,7 +86,7 @@ NMC² palette: black surfaces, azure `#2b9cfc` for the product acting (selection
 
 ## Live mode (SpacetimeDB)
 
-The view holds no safety logic: it renders what `src/store.ts` holds. By default `src/mock/` fills it, as before. In live mode the SpacetimeDB backend in `../spacetimedb` does: the view subscribes to its tables, and Space, `R`, `1`/`2` and step clicks call the backend's scenario reducers (`scenario_next`, `scenario_start`, `scenario_goto`) instead of the mock. The tech's repairs call `set_part_state` / `set_node_state` (the control room is a shift lead, which may).
+The view holds no safety logic: it renders what `src/store.ts` holds. By default `src/mock/` fills it, as before. In live mode the SpacetimeDB backend in `../spacetimedb` does: the view subscribes to its tables, and Space, `R`, `1`/`2` and step clicks call the backend's scenario reducers (`scenario_next`, `scenario_start`, `scenario_goto`) instead of the mock. The tech's repairs call `set_part_state` / `set_node_state` (the control room is a shift lead, which may). The work board's buttons call `accept_work` / `complete_work`. The `assignment` table (who took a lease on) needs bindings generated after 2026-11-08 (`npm run bindings`); older bindings only lose the assignee lines.
 
 From the repo root, `bash dev.sh up` does all of this (with `bash dev.sh server` running in another terminal). By hand:
 

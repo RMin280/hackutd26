@@ -130,7 +130,7 @@ The `decision` table is the one ordered feed for the view and the agents: `{seq,
 
 To carry the agents' events it gains three columns: `type` (what happened, from the list below), `subject` (the node, part, lease, job or feature it's about) and `data` (a JSON string with the typed fields the agents and the view need). Every existing row gets a `type` too. A `record_event(type, subject, reason, data)` reducer lets a registered agent role write its own rows, attributed to its identity and audited like everything else. Chosen over a separate `event` table because it keeps one `seq` cursor, one subscription and one feed to render; agents read `WHERE seq > ?` and filter by `type`.
 
-`type` values: `state_change`, `margin_change`, `diagnosis`, `placement`, `lease_granted`, `lease_denied`, `lease_released`, `lease_expired`, `release_denied`, `job_status`, `approval_requested`, and the fixer's `agent_plan`, `agent_step`, `agent` (started / waiting / fixed / handed_off / failed_closed), `tech_dispatched`, `notified`, `escalated`. `MERGE.md` §3 lists each type's `data` fields; `MERGE.md` §4 maps them to the view's titles, verdicts and focus. `verdict` keeps its values (`allow | warn | deny | failure | shared_cause | isolated | placement | info`) and gains the fixer's looks: `plan`, `fixed`, `handoff`. `actorKind` gains `fixer` and `shift_lead`. The dependency agent's `feature_state` and `page_resent` wait with it (§8.3).
+`type` values: `state_change`, `margin_change`, `diagnosis`, `placement`, `lease_granted`, `lease_denied`, `lease_released`, `lease_expired`, `release_denied`, `job_status`, `approval_requested`, and the fixer's `agent_plan`, `agent_step`, `agent` (started / waiting / fixed / handed_off / failed_closed), `tech_dispatched`, `notified`, `escalated`; and the work board's `work_accepted` and `work_completed` (§4.5). `MERGE.md` §3 lists each type's `data` fields; `MERGE.md` §4 maps them to the view's titles, verdicts and focus. `verdict` keeps its values (`allow | warn | deny | failure | shared_cause | isolated | placement | info`) and gains the fixer's looks: `plan`, `fixed`, `handoff`. `actorKind` gains `fixer`; shift leads and technicians stay `facility` (`catalog.ts` `ACTOR_KIND`). The dependency agent's `feature_state` and `page_resent` wait with it (§8.3).
 
 ### 4.4 Work scopes and concurrency
 
@@ -156,6 +156,17 @@ Rules, checked in this order (every rule is a lookup on the work's own footprint
 Deny returns the reason and the earliest safe time: the first start at which the same work passes, or "after CDU-3 repair" when it waits on a repair or a drain. Warn waits for a shift lead; approval re-checks the facility. SpacetimeDB runs each request as one transaction, so two simultaneous requests for the same backup are decided one after the other.
 
 *One rule to align with the fixer (§8.4):* the fixer expects `node_repair` on a **tenant** node that is still working to come back as `warn` (the tenant is told, a shift lead decides); the module's lock rule makes it `deny` (the tenant holds its nodes; drain first). Spares and already-down nodes are `allow` on both. Decide which when the adapter is written; `warn` matches the fixer's playbook.
+
+### 4.5 Who does the work (the work board; added 2026-11-08)
+
+The view's **work board** (`frontend/src/ui/board/`, key `B`, or `?view=work` on a second screen) is what the floor sees: every request in §4.2's lifecycle, in lanes (active, booked, needs approval, refused, done), with the trade and level it calls for, the protection lock over its racks, who took it on, and the agents' state from the feed. It renders what the backend decided and holds no safety logic.
+
+Two reducers carry its bookkeeping, both on maintenance leases only (a protection lease is the scheduler's):
+
+- `accept_work(id)`: a technician, facility staff or a shift lead takes a granted, active or waiting lease on. The actor's rows must cover the work; a lease already with someone else moves only on a shift lead's say-so. It writes an `assignment` row and a `work_accepted` feed row (with the trade), and touches nothing the interlock decided.
+- `complete_work(id, note)`: the assignee, the requester or a shift lead reports the work done. An active lease ends now (`done`, claims released), and for hardware work a target that was failed or degraded comes back `ok` as an ordinary state change, so margins recompute and the feed shows the repair the same way the tech gull's does. Software work just ends. Not before the window starts.
+
+The trade and level per kind of work are a presentation table in the view, mirroring `catalog.ts`'s `send` (hardware tech, mechanical tech, electrical tech, network engineer, automation; L1 any tech on shift, L2 the trade's own tech, L3 senior or licensed). The risk-aware allocator (§11, Iteration 3) would score people instead; this board does not assign anyone: people take work on themselves.
 
 ## 5. Failure diagnosis (`diagnose.ts`)
 
@@ -340,7 +351,8 @@ Roadmap (Iteration 2): signed lease tokens that equipment systems verify ("no le
 1. **Floor map:** one full-screen three.js hall (10 rows × 16 racks × 8 nodes, paired around enclosed hot aisles). Healthy racks stay neutral; a rack one failure from an outage gets a gold top and one with no working feed a red top. Unprotected parts are highlighted, job nodes are blue, protected racks get an azure top, frame and lock, and a safe restart placement shows as pale-blue server panels. Colour only where it means something: gold = reduced backup or at risk (including the shared-cause lines), red = failed and nothing else, azure = Squawk acting (selection, protection, primary controls, and a DENIED verdict, because a refusal is the interlock doing its job).
 2. **Decision feed:** every request, diagnosis and placement with its verdict and reason; clicking one flies the camera to what it's about.
 3. **Mode toggle:** naive scheduler vs Squawk, run on the same scenario.
-4. Cards for racks, nodes and parts; map-style navigation; collapsible panels; the seagull crew (decoration only, `G` hides it).
+4. Cards for racks, nodes and parts; map-style navigation; collapsible panels; the tech gull that walks to failed hardware and repairs it (`T`); the fixer's popups over its software fixes.
+5. **Work board** (`B`, or `?view=work` for a second screen; §4.5): what the floor sees. Lanes of work with trade and level, locks, who took what on, agents' state, and the Take it on / Complete buttons over `accept_work` / `complete_work`. Live mode only for the buttons.
 
 No charts and no sensor readings. The view holds no safety logic.
 
@@ -410,6 +422,7 @@ New ideas go into this table, not into the code.
 - **Placement:** excludes at-risk, yellow/red racks, booked maintenance and busy nodes; prefers locality; reports a shortfall.
 - **Security:** missing or invalid identity refused; out-of-scope row refused; every call logged; free text doesn't change verdicts; `record_event` only for agent roles, attributed to the caller.
 - **Scenario:** naive mode crashes twice; Squawk mode restarts once and the cooling lease is denied (`test/runner.test.ts`); steps 7–9 produce the expected `decision` rows.
+- **Work board** (`test/work-board.test.ts`, `test/view-board.test.ts`): accept and complete follow their role, scope and ownership rules; completing a hardware repair brings the target back and ends the lease, software work just ends, protection leases are refused; every kind of work has a trade and level; lanes, locks and agent cards read the backend's rows through the live mapping.
 - **Contract (view):** the backend scenario, mapped through the view's `live/mapping.ts`, equals the frontend mock at every step (`test/frontend-contract.test.ts`).
 - **Contract (agents)** (`tests/test_squawk_http.py`): the backend's answers after the maintenance scenario (recorded by `tests/fixtures/record_spacetime.py`), read through the HTTP adapter, give the same hall, issues and blockers as `MockSquawk` driven through the same story; plus the reducer arguments, the wire format and failing closed.
 - **Scale:** every limit in §7.2 (`npm run test:scale`).

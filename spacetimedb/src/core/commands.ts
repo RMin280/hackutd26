@@ -12,6 +12,7 @@ import {
   PART_TYPES_FOR_ROLE,
   WORK_KINDS,
   isWorkKind,
+  tradeFor,
   type Action,
   type WorkKind,
 } from './catalog';
@@ -30,6 +31,7 @@ import {
   RequestError,
   type ActorRow,
   type AgentEventType,
+  type AssignmentRow,
   type DecisionRow,
   type EventType,
   type FeedVerdict,
@@ -63,6 +65,7 @@ const ACTION_TEXT: Record<Action, string> = {
   protect: 'request protection leases',
   book_for_others: 'book work for other actors',
   record: 'write events to the decision feed',
+  work_on: 'take on or complete work',
   clock: 'move the simulated clock',
   present: 'run the demo scenario or reseed the hall',
   admin: 'do admin actions',
@@ -547,6 +550,154 @@ export function releaseWork(s: Store, identity: string, id: bigint, note = ''): 
   audit(s, a, 'release', `#${id}`, ended, n);
 }
 
+// ---------------------------------------------------------------- the work board: who does what
+
+const TAKEABLE: readonly string[] = ['granted', 'active', 'needs_approval'];
+
+/** A maintenance lease by id. Protection leases are the scheduler's and have no worker. */
+function maintenanceWork(s: Store, id: bigint): WorkRow {
+  const w = s.work(id);
+  if (!w) throw new RequestError(`No work #${id}.`);
+  if (w.kind === 'protection') throw new RequestError(`#${id} is a protection lease for ${w.job}: the scheduler holds it, and release_work ends it.`);
+  return w;
+}
+
+const workTitle = (w: WorkRow) => `${isWorkKind(w.kind) ? CATALOG[w.kind].title : w.kind} on ${w.targetLabel}`;
+
+function tradeOf(s: Store, w: WorkRow): string {
+  const partType = w.targetKind === 'part' ? (s.part(w.target)?.type as PartType | undefined) : undefined;
+  return isWorkKind(w.kind) ? tradeFor(w.kind, partType) : 'tech';
+}
+
+function workFocus(w: WorkRow): Pick<DecisionRow, 'focusKind' | 'focusIds'> {
+  const single = w.targetKind === 'part' || w.targetKind === 'node' || w.targetKind === 'rack';
+  return single ? { focusKind: w.targetKind, focusIds: [w.target] } : { focusKind: 'racks', focusIds: w.racks };
+}
+
+const windowText = (w: WorkRow) =>
+  w.status === 'needs_approval'
+    ? 'Waiting for shift lead approval.'
+    : w.status === 'granted'
+      ? `Starts ${clock(w.startMin)}, runs until ${clock(w.endMin)}.`
+      : `Runs until ${clock(w.endMin)}.`;
+
+/**
+ * A worker takes a lease on. Technicians, facility staff and shift leads; the actor's rows must
+ * cover where the work happens; a lease already with someone else only moves on a shift lead's
+ * say-so. Taking on what is already yours changes nothing. The lease itself is untouched: the
+ * interlock decided it when it was requested, and accepting is bookkeeping, never a verdict.
+ */
+export function acceptWork(s: Store, identity: string, id: bigint): AssignmentRow {
+  const a = requireActor(s, identity);
+  requireRole(a, 'work_on');
+  const w = maintenanceWork(s, id);
+  if (!TAKEABLE.includes(w.status)) throw new RequestError(`#${id} is ${w.status}; nothing to take on.`);
+  if (a.rows.length > 0 && isWorkKind(w.kind)) {
+    const rows = footprint(s, w.kind, w.target).rows;
+    if (rows.some((r) => r === 0 || !a.rows.includes(r))) {
+      const where = rows.includes(0) ? 'the central plant' : formatRows(rows);
+      throw new RequestError(`${a.name} is scoped to ${formatRows(a.rows)}; ${w.targetLabel} is in ${where}.`);
+    }
+  }
+  const before = s.assignment(id);
+  const held = before && before.completedAt < 0 && before.assignee ? before : undefined;
+  if (held) {
+    if (held.assignee === a.name) return held;
+    if (!CAN_DO.approve.includes(a.role as Role)) throw new RequestError(`#${id} is already with ${held.assignee}; only a shift lead can move it.`);
+  }
+  const row: AssignmentRow = {
+    work: id,
+    assignee: a.name,
+    assigneeRole: a.role,
+    acceptedAt: s.now(),
+    completedBy: '',
+    completedAt: -1,
+    repaired: [],
+    note: '',
+  };
+  s.putAssignment(row);
+  const trade = tradeOf(s, w);
+  decide(s, {
+    ...who(a),
+    type: 'work_accepted',
+    subject: w.target,
+    title: `${workTitle(w)} taken by ${a.name}${held ? ` (from ${held.assignee})` : ''}`,
+    verdict: 'info',
+    reason: `${a.name} (${trade}) is on it. ${windowText(w)}`,
+    ...workFocus(w),
+    work: w.id,
+    data: { ...leaseData(w), assignee: a.name, assignee_role: a.role, trade, accepted_at: row.acceptedAt, from: held?.assignee ?? '' },
+  });
+  audit(s, a, 'accept', `#${id}`, 'ok', `${a.name} took on ${describeWork(w)}${held ? ` from ${held.assignee}` : ''}`);
+  return row;
+}
+
+/**
+ * The work is done: an active lease ends now, and for hardware work a target that was failed or
+ * degraded comes back ok (the repair's outcome, reported by whoever did it, recorded like any
+ * state change). Software work just ends. The assignee, the requester or a shift lead.
+ */
+export function completeWork(s: Store, identity: string, id: bigint, note = ''): AssignmentRow {
+  const a = requireActor(s, identity);
+  requireRole(a, 'work_on');
+  const w = maintenanceWork(s, id);
+  const before = s.assignment(id);
+  const mine = !!before && before.completedAt < 0 && before.assignee === a.name;
+  const requester = w.actorIdentity === a.identity;
+  const lead = CAN_DO.approve.includes(a.role as Role);
+  if (!mine && !requester && !lead) throw new RequestError(`Only ${before?.assignee || w.actor} or a shift lead can complete #${id}.`);
+  if (w.status === 'granted') throw new RequestError(`#${id} hasn't started (it starts ${clock(w.startMin)}); release_work cancels it.`);
+  if (w.status === 'needs_approval') throw new RequestError(`#${id} is still waiting for approval.`);
+  if (w.status !== 'active') throw new RequestError(`#${id} is ${w.status}; nothing to complete.`);
+
+  const repaired: string[] = [];
+  if (isWorkKind(w.kind) && CATALOG[w.kind].category === 'hardware') {
+    for (const n of w.offlineNodes) {
+      const node = s.node(n);
+      if (node && node.state !== 'ok') {
+        changeNodeState(s, a, n, 'ok');
+        repaired.push(n);
+      }
+    }
+    for (const p of w.offlineParts) {
+      const part = s.part(p);
+      if (part && part.state !== 'ok') {
+        changePartState(s, a, p, 'ok');
+        repaired.push(p);
+      }
+    }
+  }
+  finish(s, w, 'done', s.now());
+
+  const n = cleanText(note);
+  const row: AssignmentRow = {
+    work: id,
+    assignee: before?.assignee || a.name,
+    assigneeRole: before?.assignee ? before.assigneeRole : a.role,
+    acceptedAt: before?.assignee ? before.acceptedAt : s.now(),
+    completedBy: a.name,
+    completedAt: s.now(),
+    repaired,
+    note: n,
+  };
+  s.putAssignment(row);
+  const back = repaired.length ? `${formatList(repaired)} ${repaired.length === 1 ? 'is' : 'are'} back in service. ` : '';
+  const feeds = isWorkKind(w.kind) && CATALOG[w.kind].partOffline && w.racks.length ? `; ${plural(w.racks.length, 'rack')} below it have the feed back` : '';
+  decide(s, {
+    ...who(a),
+    type: 'work_completed',
+    subject: w.target,
+    title: `${workTitle(w)} completed by ${a.name}`,
+    verdict: 'fixed',
+    reason: `${back}Its claims are released${feeds}.${n ? ` ${n}` : ''}`,
+    ...workFocus(w),
+    work: w.id,
+    data: { ...leaseData(w), completed_by: a.name, assignee: row.assignee, repaired, note: n, ended: 'done' },
+  });
+  audit(s, a, 'complete', `#${id}`, 'done', `${back}${n}`.trim());
+  return row;
+}
+
 /** Move simulated time forward; leases start and end on the way (they auto-expire). */
 export function advanceClock(s: Store, identity: string, minutes: number): void {
   const a = requireActor(s, identity);
@@ -611,7 +762,13 @@ export function setPartState(s: Store, identity: string, partId: string, state: 
   const part = s.part(partId);
   if (!part) throw new RequestError(`Unknown part "${partId}".`);
   if (!(HEALTH as readonly string[]).includes(state)) throw new RequestError(`state must be one of ${HEALTH.join(', ')}.`);
-  if (part.state === state) return;
+  changePartState(s, a, partId, state);
+}
+
+/** The state change itself, for set_part_state and for a completed repair (complete_work). */
+function changePartState(s: Store, a: ActorRow, partId: string, state: string): void {
+  const part = s.part(partId);
+  if (!part || part.state === state) return;
   s.putPart({ ...part, state });
   const below = s.downstreamRacks(partId);
   recomputeRacks(s, below);
@@ -696,6 +853,13 @@ export function setNodeState(s: Store, identity: string, nodeId: string, state: 
   const node = s.node(nodeId);
   if (!node) throw new RequestError(`Unknown node "${nodeId}".`);
   if (!(HEALTH as readonly string[]).includes(state)) throw new RequestError(`state must be one of ${HEALTH.join(', ')}.`);
+  changeNodeState(s, a, nodeId, state);
+}
+
+/** The state change itself, for set_node_state and for a completed repair (complete_work). */
+function changeNodeState(s: Store, a: ActorRow, nodeId: string, state: string): void {
+  const node = s.node(nodeId);
+  if (!node) return;
   s.putNode({ ...node, state });
   decide(s, {
     ...who(a),

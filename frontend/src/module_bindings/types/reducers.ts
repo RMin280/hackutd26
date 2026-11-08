@@ -6,9 +6,11 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all reducer arg schemas
+import AcceptWorkReducer from "../accept_work_reducer";
 import AdvanceClockReducer from "../advance_clock_reducer";
 import ApproveWorkReducer from "../approve_work_reducer";
 import ClaimAdminReducer from "../claim_admin_reducer";
+import CompleteWorkReducer from "../complete_work_reducer";
 import DiagnoseFailureReducer from "../diagnose_failure_reducer";
 import FinishJobReducer from "../finish_job_reducer";
 import NaiveRestartReducer from "../naive_restart_reducer";
@@ -32,9 +34,11 @@ import SetNodeStateReducer from "../set_node_state_reducer";
 import SetOpenRegistrationReducer from "../set_open_registration_reducer";
 import SetPartStateReducer from "../set_part_state_reducer";
 
+export type AcceptWorkParams = __Infer<typeof AcceptWorkReducer>;
 export type AdvanceClockParams = __Infer<typeof AdvanceClockReducer>;
 export type ApproveWorkParams = __Infer<typeof ApproveWorkReducer>;
 export type ClaimAdminParams = __Infer<typeof ClaimAdminReducer>;
+export type CompleteWorkParams = __Infer<typeof CompleteWorkReducer>;
 export type DiagnoseFailureParams = __Infer<typeof DiagnoseFailureReducer>;
 export type FinishJobParams = __Infer<typeof FinishJobReducer>;
 export type NaiveRestartParams = __Infer<typeof NaiveRestartReducer>;

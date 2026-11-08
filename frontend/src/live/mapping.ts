@@ -20,6 +20,8 @@ import type {
   Rack,
   Site,
   Verdict,
+  WorkItem,
+  WorkStatus,
   World,
 } from '../model/types';
 import type { Mode } from '../mock/scenario';
@@ -81,14 +83,40 @@ export interface JobRow {
 }
 export interface WorkRow {
   id: bigint;
+  ticket: string;
   kind: string;
+  category: string;
+  targetKind: string;
   target: string;
+  targetLabel: string;
   actor: string;
+  actorRole: string;
+  requestedAt: number;
   startMin: number;
   endMin: number;
   status: string;
+  verdict: string;
+  reason: string;
+  earliestSafe: string;
+  blockers: string[];
   racks: string[];
   job: string;
+  nodeCount: number;
+  approvedBy: string;
+  routine: boolean;
+  note: string;
+  bookedBy: string;
+}
+/** The work board's bookkeeping: who took a lease on and who finished it (accept_work / complete_work). */
+export interface AssignmentRow {
+  work: bigint;
+  assignee: string;
+  assigneeRole: string;
+  acceptedAt: number;
+  completedBy: string;
+  completedAt: number;
+  repaired: string[];
+  note: string;
 }
 export interface DiagnosisRow {
   id: bigint;
@@ -121,7 +149,7 @@ export interface DecisionRow {
   focusParts: string[];
   type?: string; // what happened (state_change, lease_denied, agent_plan, ...)
   subject?: string; // the node, part, job or work it is about
-  data?: string; // JSON with the typed fields agents read; the view ignores it
+  data?: string; // JSON with the typed fields agents read; the work board reads an agent's status from it
 }
 export interface ClockRow {
   id: number;
@@ -147,6 +175,7 @@ export interface Tables {
   margin: MarginRow[];
   job: JobRow[];
   work: WorkRow[];
+  assignment?: AssignmentRow[]; // missing until the bindings include the table (npm run bindings)
   diagnosis: DiagnosisRow[];
   placement: PlacementRow[];
   decision: DecisionRow[];
@@ -221,6 +250,54 @@ function toLease(w: WorkRow): Lease {
   };
 }
 
+const WORK_STATUSES: readonly WorkStatus[] = ['simulated', 'denied', 'needs_approval', 'granted', 'active', 'done', 'cancelled', 'rejected', 'expired'];
+const orUndefined = (s: string) => s || undefined;
+
+/** Every request the backend holds, oldest first, with the board's bookkeeping joined on. */
+export function toWorkItems(work: WorkRow[], assignments: AssignmentRow[] = []): WorkItem[] {
+  const byWork = new Map<string, AssignmentRow>();
+  for (const a of assignments) byWork.set(String(a.work), a);
+  return [...work].sort(byId).map((w) => {
+    const a = byWork.get(String(w.id));
+    const item: WorkItem = {
+      id: String(w.id),
+      ticket: w.ticket,
+      kind: w.kind,
+      category: w.category === 'software' ? 'software' : w.category === 'protection' || w.kind === 'protection' ? 'protection' : 'hardware',
+      targetKind: w.targetKind,
+      target: w.target,
+      targetLabel: w.targetLabel,
+      actor: w.actor,
+      actorRole: w.actorRole,
+      bookedBy: orUndefined(w.bookedBy),
+      requestedAt: w.requestedAt,
+      start: w.startMin,
+      end: w.endMin,
+      status: WORK_STATUSES.includes(w.status as WorkStatus) ? (w.status as WorkStatus) : 'simulated',
+      verdict: w.verdict === 'allow' || w.verdict === 'warn' ? w.verdict : 'deny',
+      reason: w.reason,
+      earliestSafe: orUndefined(w.earliestSafe),
+      blockers: [...w.blockers],
+      racks: [...w.racks],
+      job: orUndefined(w.job),
+      nodeCount: w.nodeCount,
+      approvedBy: orUndefined(w.approvedBy),
+      routine: w.routine,
+      note: orUndefined(w.note),
+    };
+    if (a && (a.assignee || a.completedBy)) {
+      item.assignee = orUndefined(a.assignee);
+      item.assigneeRole = orUndefined(a.assigneeRole);
+      item.acceptedAt = a.acceptedAt >= 0 ? a.acceptedAt : undefined;
+      item.completedBy = orUndefined(a.completedBy);
+      item.completedAt = a.completedAt >= 0 ? a.completedAt : undefined;
+      item.repaired = [...a.repaired];
+      item.completionNote = orUndefined(a.note);
+    }
+    return item;
+  });
+}
+
 export function toWorld(t: Tables, site: Site): World {
   const partState: Record<string, PartState> = {};
   for (const p of t.part) partState[p.id] = isHeld(p.heldBy) ? 'maintenance' : (p.state as PartState);
@@ -287,6 +364,7 @@ export function toWorld(t: Tables, site: Site): World {
     placed: used ? [...used.nodes] : [],
     job,
     deniedRequests: t.work.filter((w) => w.status === 'denied').length,
+    work: toWorkItems(t.work, t.assignment ?? []),
   };
 }
 
@@ -311,6 +389,7 @@ export function toEvents(rows: DecisionRow[]): DecisionEvent[] {
       focus: toFocus(e.focusKind, e.focusIds, e.focusParts),
       type: e.type,
       subject: e.subject,
+      data: e.data,
     }));
 }
 

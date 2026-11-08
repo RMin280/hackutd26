@@ -100,11 +100,12 @@ export function Racks() {
     }
     return { rate, phase };
   }, [N]);
-  // 0 = failed (dark), 1 = free spare, 2 = tenant, 3 = job
+  // 0 = failed or out of service (dark), 1 = free spare, 2 = tenant, 3 = job
   const ledKind = useMemo(() => {
     const k = new Uint8Array(N);
     site.nodeOrder.forEach((n, i) => {
-      if (world.nodeState[n] === 'failed') k[i] = 0;
+      const st = world.nodeState[n];
+      if (st === 'failed' || st === 'maintenance') k[i] = 0;
       else {
         const o = world.owner[n].kind;
         k[i] = o === 'job' ? 3 : o === 'tenant' ? 2 : 1;
@@ -206,6 +207,8 @@ export function Racks() {
 
   const nodeColor = (n: string): string => {
     if (world.nodeState[n] === 'failed') return C.red;
+    // Held out of service by a lease (a repair, a drain-required update): powered down, so it goes dark.
+    if (world.nodeState[n] === 'maintenance') return C.nodeOut;
     if (atRisk.has(n)) return C.gold;
     const o = world.owner[n];
     if (placed.has(n)) return C.ice;

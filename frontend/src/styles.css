@@ -161,11 +161,12 @@ ol, ul { list-style: none; }
 .swatch-rack-warn { background: #2a2a2d; box-shadow: inset 0 3px 0 var(--gold); }
 .swatch-rack-bad { background: #2a2a2d; box-shadow: inset 0 3px 0 var(--red); }
 .swatch-protected { background: #2a2a2d; box-shadow: inset 0 3px 0 #2a6fae, inset 0 0 0 1px var(--azure); }
-.swatch-node-job, .swatch-node-safe, .swatch-node-risk, .swatch-node-failed { height: 5px; }
+.swatch-node-job, .swatch-node-safe, .swatch-node-risk, .swatch-node-failed, .swatch-node-out { height: 5px; }
 .swatch-node-job { background: #1d3b5e; }
 .swatch-node-safe { background: var(--ice); }
 .swatch-node-risk { background: var(--gold); }
 .swatch-node-failed { background: var(--red); }
+.swatch-node-out { background: #0f0f11; box-shadow: inset 0 0 0 1px var(--line-strong); }
 .swatch-aisle-hot { background: rgba(221, 182, 124, 0.2); box-shadow: inset 0 0 0 1px #6f5a3c; }
 .swatch-aisle-cold { background: #0c131c; box-shadow: inset 0 0 0 1px #1b2c3f; }
 
@@ -345,4 +346,142 @@ ol, ul { list-style: none; }
 @media (max-height: 800px) {
   .caption { padding-top: 24px; padding-bottom: 14px; }
   .caption-text { font-size: 15px; }
+}
+
+/* ---------- navigation: Hall / Work board (ui/ViewTabs.tsx) ---------- */
+.view-tabs { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line-strong); border-radius: var(--radius); }
+.view-tabs button { height: 24px; padding: 0 10px; font-size: 11px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-3); border-radius: 1px; white-space: nowrap; }
+.view-tabs button:hover { color: var(--text-2); }
+.view-tabs button.on { background: #1f1f22; color: var(--text); }
+.topbar-start { display: flex; align-items: center; gap: 16px; min-width: 0; }
+
+/* ---------- work board: what the floor sees (ui/board/WorkBoard.tsx) ----------
+   The same system as the HUD: square surfaces, azure for Squawk acting (an active lease, a lock, a
+   refusal that held), gold for what needs a person (approval, a hand-off), red for failures only.
+   Three columns: the trade rail (the filter), the list, the piece of work in hand or the context.
+   Glyphs carry meaning before the words do: the trade, the level, how far a window has run, a lock. */
+.board { position: fixed; inset: 0; z-index: 3; display: flex; flex-direction: column; background: var(--bg); color: var(--text); animation: rise 0.2s ease-out; }
+.board-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 20px; height: var(--head); padding: 0 24px; border-bottom: 1px solid var(--line); background: var(--surface-solid); }
+.board-end { display: flex; align-items: center; gap: 18px; white-space: nowrap; }
+.board-me { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
+.board-notice { flex: none; padding: 8px 24px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--gold); background: rgba(221, 182, 124, 0.06); animation: rise 0.25s ease-out; }
+.board-notice.muted { color: var(--text-3); background: none; }
+
+.board-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 212px minmax(0, 1fr) 400px; }
+.board-main, .board-side, .trade-rail { min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #2a2a2d transparent; }
+.board-side { border-left: 1px solid var(--line); background: var(--surface-solid); }
+
+/* glyphs */
+.glyph { display: inline-grid; place-items: center; flex: none; width: 20px; height: 20px; color: var(--text-2); }
+.glyph-tile { width: 32px; height: 32px; background: #1b1b1e; border: 1px solid var(--line); color: var(--text-2); }
+.glyph-azure { color: var(--azure); }
+.glyph-gold { color: var(--gold); }
+.level-bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 10px; }
+.level-bars i { display: block; width: 3px; background: var(--line-strong); }
+.level-bars i:nth-child(1) { height: 5px; }
+.level-bars i:nth-child(2) { height: 7px; }
+.level-bars i:nth-child(3) { height: 10px; }
+.level-bars i.on { background: currentColor; }
+.time-bar { display: block; width: 100%; height: 3px; background: rgba(255, 255, 255, 0.1); }
+.time-bar i { display: block; height: 100%; background: var(--azure); transition: width 0.6s ease-out; }
+.row-map { width: 48px; height: 30px; flex: none; }
+.row-map rect { fill: rgba(255, 255, 255, 0.12); }
+.row-map rect.lit { fill: currentColor; }
+.lane-mark-active { background: var(--azure); }
+.lane-mark-booked { background: var(--text-3); }
+.lane-mark-approval { background: var(--gold); }
+.lane-mark-refused { background: var(--azure); opacity: 0.6; }
+.lane-mark-done { background: var(--line-strong); }
+
+/* the trade rail: one entry per trade, with its glyph and how much work calls for it */
+.trade-rail { display: flex; flex-direction: column; padding: 10px 0; border-right: 1px solid var(--line); background: var(--surface-solid); }
+.rail-item { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 12px; height: 40px; padding: 0 16px 0 14px; border-left: 2px solid transparent; color: var(--text-3); }
+.rail-item .glyph { color: var(--text-3); }
+.rail-item:hover { background: var(--hover); color: var(--text-2); }
+.rail-item.on { background: rgba(43, 156, 252, 0.08); border-left-color: var(--azure); color: var(--text); }
+.rail-item.on .glyph { color: var(--azure); }
+.trade-name { font-size: 12px; font-weight: 500; text-transform: capitalize; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+.trade-count { font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.rail-item.on .trade-count { color: var(--text-2); }
+
+/* lanes: a header you can fold, then rows */
+.lane-group + .lane-group { border-top: 1px solid var(--line); }
+.lane-toggle { width: 100%; display: flex; align-items: center; justify-content: space-between; height: 40px; padding: 0 24px; color: var(--text-3); }
+.lane-toggle .eyebrow { display: inline-flex; align-items: center; gap: 10px; }
+.lane-toggle:hover, .lane-toggle:hover .eyebrow { color: var(--text-2); }
+.lane-empty { padding: 4px 24px 14px; max-width: 48ch; font-size: 12px; color: var(--text-3); }
+.work-list { padding-bottom: 6px; }
+.work-row { width: 100%; display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: start; gap: 14px; padding: 10px 24px 11px 22px; border-left: 2px solid transparent; text-align: left; }
+.work-row:hover { background: var(--hover); }
+.work-row.selected { background: rgba(43, 156, 252, 0.08); border-left-color: var(--azure); }
+.work-row.selected .glyph-tile { border-color: var(--azure); color: var(--azure); }
+.work-row.lane-approval:not(.selected) { border-left-color: var(--gold); }
+.work-row.lane-done { opacity: 0.6; }
+.row-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.row-title { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.row-target { font-size: 13px; font-weight: 500; color: var(--text); }
+.row-kind { font-size: 12px; color: var(--text-2); }
+.row-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-size: 11px; color: var(--text-2); }
+.row-lock { display: inline-flex; align-items: center; gap: 4px; color: var(--azure); }
+.row-end { display: flex; flex-direction: column; align-items: flex-end; gap: 7px; min-width: 96px; padding-top: 2px; }
+.row-end .verdict { white-space: nowrap; }
+.trade-chip { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 500; color: var(--text); text-transform: capitalize; }
+
+/* the piece of work in hand */
+.work-detail { display: flex; flex-direction: column; min-height: 100%; animation: slide-in 0.24s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.work-detail .detail-head { align-items: flex-start; }
+.detail-id { display: flex; align-items: flex-start; gap: 14px; min-width: 0; }
+.detail-id .row-map { margin-top: 4px; }
+.work-detail .detail-sub { margin-top: 4px; }
+.detail-window { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 14px var(--pad) 0; font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.detail-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 14px var(--pad) 4px; }
+.board-btn { height: 32px; padding: 0 14px; display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line-strong); border-radius: var(--radius); font-size: 11px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-2); white-space: nowrap; }
+.board-btn:hover:not(:disabled) { color: var(--text); border-color: rgba(255, 255, 255, 0.3); }
+.board-btn:disabled { opacity: 0.4; cursor: default; }
+.board-btn-primary { background: var(--azure); border-color: var(--azure); color: #000; }
+.board-btn-primary:hover:not(:disabled) { background: #4aabff; border-color: #4aabff; color: #000; }
+.board-btn-quiet { border-color: transparent; color: var(--text-3); }
+.board-input { flex: 1; min-width: 120px; height: 32px; padding: 0 10px; background: transparent; border: 1px solid var(--line); border-radius: var(--radius); font: inherit; font-size: 12px; color: var(--text); }
+.board-input:focus { outline: none; border-color: var(--azure); }
+.board-input::placeholder { color: var(--text-3); }
+.board-input:disabled { opacity: 0.4; }
+.work-detail .facts div { grid-template-columns: 104px minmax(0, 1fr); align-items: center; }
+.work-detail .eyebrow svg { vertical-align: -2px; margin-right: 4px; }
+
+/* context when nothing is in hand: locks, who is on the floor, the agents */
+.board-context { display: flex; flex-direction: column; }
+.ctx-section { padding: 14px var(--pad) 10px; }
+.ctx-section + .ctx-section { border-top: 1px solid var(--line); }
+.ctx-section .lane-empty { padding: 8px 0 6px; }
+.ctx-list { display: flex; flex-direction: column; margin-top: 6px; }
+.ctx-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; }
+.ctx-row .glyph { margin-top: 1px; }
+.ctx-list li + li { border-top: 1px solid var(--line); }
+.ctx-row-btn { width: 100%; text-align: left; }
+.ctx-row-btn:hover .ctx-title { color: var(--azure); }
+.ctx-main { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.ctx-title { font-size: 13px; color: var(--text); }
+.ctx-kind { margin-left: 8px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
+.ctx-sub { font-size: 12px; line-height: 1.45; color: var(--text-2); }
+.ctx-row .verdict { white-space: nowrap; padding-top: 2px; }
+
+@media (max-width: 1280px) {
+  .board-body { grid-template-columns: 56px minmax(0, 1fr) 340px; }
+  .rail-item { grid-template-columns: 20px; justify-content: center; padding: 0; }
+  .trade-name, .trade-count { display: none; }
+}
+@media (max-width: 900px) {
+  .board-head { padding: 0 16px; }
+  .board-body { display: flex; flex-direction: column; overflow-y: auto; }
+  .trade-rail { flex-direction: row; overflow-x: auto; overflow-y: hidden; padding: 6px 8px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .rail-item { grid-template-columns: 20px auto; gap: 8px; height: 36px; padding: 0 10px; border-left: 0; border-bottom: 2px solid transparent; }
+  .rail-item.on { border-bottom-color: var(--azure); }
+  .trade-name { display: inline; }
+  .trade-count { display: none; }
+  .board-main { overflow: visible; }
+  .board-side { position: fixed; left: 0; right: 0; bottom: 0; max-height: 82vh; overflow-y: auto; border-left: 0; border-top: 1px solid var(--line-strong); box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.6); }
+  .board-side .board-context { display: none; }
+  .board:not(.has-selection) .board-side { display: none; }
+  .lane-toggle, .work-row { padding-left: 16px; padding-right: 16px; }
+  .work-row { padding-top: 12px; padding-bottom: 13px; }
 }

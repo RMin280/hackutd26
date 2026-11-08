@@ -177,6 +177,12 @@ export const SEND_BY_PART: Record<PartType, string> = {
   spine: 'network engineer',
 };
 
+/** The trade a piece of work calls for: the kind's `send`, or by part type for facility work. */
+export function tradeFor(kind: WorkKind, partType?: PartType): string {
+  if (kind === 'facility_work' && partType) return SEND_BY_PART[partType];
+  return CATALOG[kind].send;
+}
+
 // ---- roles (DESIGN.md §9)
 
 export const CAN_REQUEST: Record<Role, WorkKind[]> = {
@@ -211,6 +217,7 @@ export type Action =
   | 'protect'
   | 'book_for_others' // request work on behalf of another actor
   | 'record' // write an agent event to the decision feed
+  | 'work_on' // take a lease on and complete it (the work board)
   | 'clock'
   | 'present'
   | 'admin';
@@ -218,6 +225,7 @@ export type Action =
 export const CAN_DO: Record<Action, Role[]> = {
   approve: ['shift_lead', 'admin'],
   set_state: ['facility', 'shift_lead', 'admin'],
+  work_on: ['technician', 'facility', 'shift_lead', 'admin'],
   report_failure: ['scheduler_agent', 'facility', 'shift_lead', 'admin'],
   diagnose: ['scheduler_agent', 'remediation_agent', 'technician', 'shift_lead', 'admin'],
   placement: ['scheduler_agent', 'shift_lead', 'admin'],

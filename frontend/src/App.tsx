@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
-import { useStore, stepCount } from './store';
+import { boardOnly, useStore, stepCount } from './store';
 import { Hall } from './scene/Hall';
+import { WorkBoard } from './ui/board/WorkBoard';
 import { scenarioOf } from './mock/scenario';
 import { Sidebar } from './ui/Sidebar';
 import { StatTiles } from './ui/StatTiles';
@@ -9,6 +10,7 @@ import { DetailCard } from './ui/DetailCard';
 import { clock } from './ui/format';
 import { liveEnabled } from './live/config';
 import { IconChevron, IconTarget } from './ui/Icons';
+import { ViewTabs } from './ui/ViewTabs';
 
 const AUTOPLAY_MS = 4200;
 
@@ -30,9 +32,12 @@ function TopBar() {
   const toggle = useStore((s) => s.togglePanel);
   return (
     <header className="topbar">
-      <p className="context">
-        <span className="context-strong">Hall A</span>160 racks · 1,280 nodes
-      </p>
+      <div className="topbar-start">
+        <ViewTabs />
+        <p className="context">
+          <span className="context-strong">Hall A</span>160 racks · 1,280 nodes
+        </p>
+      </div>
       <div className="topbar-end">
         <p className="sim-clock">
           {/* Live: the backend's clock, which agents and the presenter move outside the steps too. */}
@@ -103,7 +108,10 @@ function useKeys() {
         s.setPlaying(false);
         s.prev();
       } else if (e.key === 'Escape') {
-        if (s.selection) s.select(null);
+        if (s.view === 'board') {
+          if (s.boardSelection) s.selectWork(null);
+          else if (!boardOnly) s.setView('hall');
+        } else if (s.selection) s.select(null);
         else s.overview();
       } else if (e.key === 'r' || e.key === 'R') {
         s.reset();
@@ -115,6 +123,8 @@ function useKeys() {
         s.setMode('squawk');
       } else if (e.key === 't' || e.key === 'T') {
         s.toggleTech();
+      } else if (e.key === 'b' || e.key === 'B') {
+        s.toggleView();
       }
     };
     window.addEventListener('keydown', onKey);
@@ -138,12 +148,23 @@ export default function App() {
   const panels = useStore((s) => s.panels);
   const hasSelection = useStore((s) => s.selection !== null);
   const overview = useStore((s) => s.overview);
+  const view = useStore((s) => s.view);
   // The right column stays open while a card is showing, even if the feed is collapsed.
   const rightOpen = panels.feed || hasSelection;
+
+  // ?view=work: the board alone, for a second screen. No hall is drawn, so a tablet copes.
+  if (boardOnly) {
+    return (
+      <div className="app">
+        <WorkBoard />
+      </div>
+    );
+  }
 
   return (
     <div className="app">
       <Hall />
+      {view === 'board' && <WorkBoard />}
       <div className={`hud${panels.sidebar ? '' : ' left-closed'}${rightOpen ? '' : ' right-closed'}`}>
         <Sidebar />
         <div className="top">
