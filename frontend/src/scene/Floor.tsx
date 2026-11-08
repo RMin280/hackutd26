@@ -20,6 +20,7 @@ import {
   type Vec3,
 } from './layout';
 import { makeTextTexture, useFontsReady } from './labels';
+import { readFrame } from './camera';
 
 const noRaycast = () => null;
 const TILE = 0.6; // raised-floor tiles
@@ -134,7 +135,7 @@ export function Floor() {
   );
 }
 
-/** Glass roof and end doors over each hot aisle: hot-aisle containment. */
+/** Glass roof and frame over each hot aisle: hot-aisle containment. The end doors are in Doors.tsx. */
 export function Containment() {
   const glass = useMemo(
     () =>
@@ -182,11 +183,6 @@ export function Containment() {
           <mesh material={glass} rotation-x={-Math.PI / 2} position={[ROW_CX, RACK.h + 0.012, hotAisleZ(p)]} raycast={noRaycast} renderOrder={1}>
             <planeGeometry args={[ROW_LEN, AISLE.hot]} />
           </mesh>
-          {[ROW_X0, ROW_X1].map((x) => (
-            <mesh key={x} material={glass} rotation-y={Math.PI / 2} position={[x, RACK.h / 2, hotAisleZ(p)]} raycast={noRaycast} renderOrder={1}>
-              <planeGeometry args={[AISLE.hot, RACK.h]} />
-            </mesh>
-          ))}
         </group>
       ))}
       <lineSegments geometry={frame} raycast={noRaycast}>
@@ -220,7 +216,16 @@ function FloorText({
   useEffect(() => () => tex?.texture.dispose(), [tex]);
   if (!tex) return null;
   return (
-    <mesh ref={register} position={position} rotation-x={-Math.PI / 2} renderOrder={2} raycast={noRaycast}>
+    <mesh
+      ref={(m) => {
+        if (m) m.userData.baseOpacity = opacity;
+        register(m);
+      }}
+      position={position}
+      rotation-x={-Math.PI / 2}
+      renderOrder={2}
+      raycast={noRaycast}
+    >
       <planeGeometry args={[height * tex.aspect, height]} />
       <meshBasicMaterial
         map={tex.texture}
@@ -237,27 +242,58 @@ function FloorText({
   );
 }
 
+// Floor text grows with camera distance so it stays readable from the overview without
+// turning into billboards in close-ups (scale = distance / LABEL_REF, clamped).
+const LABEL_REF = 16;
+const LABEL_MIN = 0.8;
+const LABEL_MAX = 1.9;
+// Labels fade out when they would sit under a HUD panel (text under text reads as a glitch).
+const LABEL_EDGE = 16; // px inside the free area
+
 /** Row names painted on the cold-aisle floor in front of each row, plus zone names. */
 export function FloorLabels({ parts }: { parts: Record<string, PartBox> }) {
   // Floor text turns 180° when the camera looks south, so it never reads upside down.
   const meshes = useRef(new Set<THREE.Mesh>());
   const flipped = useRef(false);
   const forward = useMemo(() => new THREE.Vector3(), []);
+  const end = useMemo(() => new THREE.Vector3(), []);
   const register: Register = (mesh) => {
     if (mesh) {
       mesh.rotation.z = flipped.current ? Math.PI : 0;
       meshes.current.add(mesh);
     }
   };
-  useFrame(({ camera }) => {
+  useFrame(({ camera, gl }, dt) => {
     camera.getWorldDirection(forward);
     const flip = forward.z > 0.05 ? true : forward.z < -0.05 ? false : flipped.current;
-    if (flip === flipped.current) return;
-    flipped.current = flip;
+    const f = readFrame(gl.domElement);
+    const ease = 1 - Math.exp(-dt * 10);
+    const inside = (p: THREE.Vector3) => {
+      end.copy(p).project(camera);
+      const sx = ((end.x + 1) / 2) * f.width;
+      const sy = ((1 - end.y) / 2) * f.height;
+      return end.z < 1 && sx > f.left + LABEL_EDGE && sx < f.right - LABEL_EDGE && sy > f.top + LABEL_EDGE && sy < f.bottom - LABEL_EDGE;
+    };
     for (const m of meshes.current) {
-      if (m.parent) m.rotation.z = flip ? Math.PI : 0;
-      else meshes.current.delete(m);
+      if (!m.parent) {
+        meshes.current.delete(m);
+        continue;
+      }
+      if (flip !== flipped.current) m.rotation.z = flip ? Math.PI : 0;
+      const s = THREE.MathUtils.clamp(camera.position.distanceTo(m.position) / LABEL_REF, LABEL_MIN, LABEL_MAX);
+      m.scale.setScalar(s);
+      // both ends of the label must be inside the free area
+      const half = (((m.geometry as THREE.PlaneGeometry).parameters?.width ?? 0) / 2) * s;
+      end.set(m.position.x - half, m.position.y, m.position.z);
+      const a = inside(end);
+      end.set(m.position.x + half, m.position.y, m.position.z);
+      const visible = a && inside(end);
+      const mat = m.material as THREE.MeshBasicMaterial;
+      const base = (m.userData.baseOpacity as number | undefined) ?? 1;
+      mat.opacity += ((visible ? base : 0) - mat.opacity) * ease;
+      m.visible = mat.opacity > 0.01;
     }
+    flipped.current = flip;
   });
 
   const y = 0.004;

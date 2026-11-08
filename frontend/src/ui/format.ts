@@ -20,7 +20,8 @@ export const ownerText = (o: Owner) =>
 export const VERDICT: Record<Verdict, { text: string; tone: Tone }> = {
   allow: { text: 'Allowed', tone: 'azure' },
   warn: { text: 'Warning', tone: 'gold' },
-  deny: { text: 'Denied', tone: 'red' },
+  // A refusal is the product doing its job (the interlock held), so it speaks in azure; red is for failures.
+  deny: { text: 'Denied', tone: 'azure' },
   failure: { text: 'Failure', tone: 'red' },
   shared_cause: { text: 'Shared cause', tone: 'gold' },
   isolated: { text: 'Isolated', tone: 'ice' },

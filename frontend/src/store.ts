@@ -34,6 +34,7 @@ interface AppState {
   camera: CameraRequest;
   playing: boolean;
   follow: boolean;
+  staff: boolean; // the seagull crew walking the hall (decoration only)
   panels: Record<PanelName, boolean>; // true = open
 
   setMode: (m: Mode) => void;
@@ -48,6 +49,7 @@ interface AppState {
   overview: () => void;
   setHover: (h: Hover | null) => void;
   togglePanel: (p: PanelName) => void;
+  toggleStaff: () => void;
 }
 
 const site = buildSite();
@@ -64,6 +66,7 @@ export const useStore = create<AppState>((set, get) => ({
   camera: { seq: 0, target: { kind: 'overview' } },
   playing: false,
   follow: true,
+  staff: true,
   panels: { sidebar: true, feed: true, metrics: true, caption: true, legend: true },
 
   setMode: (mode) => {
@@ -152,6 +155,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   setHover: (hover) => set({ hover }),
   togglePanel: (p) => set((s) => ({ panels: { ...s.panels, [p]: !s.panels[p] } })),
+  toggleStaff: () => set((s) => ({ staff: !s.staff })),
 }));
 
 export const stepCount = (mode: Mode) => SCENARIOS[mode].length;

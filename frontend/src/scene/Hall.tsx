@@ -6,31 +6,16 @@ import * as THREE from 'three';
 import { useStore } from '../store';
 import { C } from '../theme';
 import { HALL, buildPartLayout, type PartBox } from './layout';
-import { resolveShot, shotFor, type Frame } from './camera';
+import { readFrame, resolveShot, shotFor } from './camera';
 import type { FocusTarget } from '../model/types';
 import { Racks } from './Racks';
 import { Parts } from './Parts';
 import { Containment, Floor, FloorLabels } from './Floor';
 import { FeedLines, ProtectedZones, SelectionOutline } from './Overlays';
+import { Staff } from './Staff';
+import { HotAisleDoors } from './Doors';
 
 const { ACTION } = CameraControlsImpl;
-
-/** The part of the canvas not covered by HUD panels (the `.scene-frame` grid cell). */
-function readFrame(canvas: HTMLCanvasElement): Frame {
-  const c = canvas.getBoundingClientRect();
-  const r = document.querySelector('.scene-frame')?.getBoundingClientRect();
-  if (!r || r.width < 200 || r.height < 140) {
-    return { left: 0, top: 0, right: c.width, bottom: c.height, width: c.width, height: c.height };
-  }
-  return {
-    left: r.left - c.left,
-    top: r.top - c.top,
-    right: r.right - c.left,
-    bottom: r.bottom - c.top,
-    width: c.width,
-    height: c.height,
-  };
-}
 
 const MOVE_KEYS = new Set(['w', 'a', 's', 'd', 'q', 'e']);
 
@@ -208,7 +193,9 @@ export function Hall() {
       />
       <Racks />
       <Parts layout={layout} />
+      <Staff />
       <Containment />
+      <HotAisleDoors />
       <FloorLabels parts={layout} />
       <ProtectedZones />
       <SelectionOutline />

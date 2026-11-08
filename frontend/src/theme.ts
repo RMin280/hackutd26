@@ -19,6 +19,8 @@ export const C = {
   rackBodyLit: '#343438',
   rackBodyDim: '#1c1c1e',
   stripOk: '#123d63',
+  // lid on a rack under a protection lease: azure toned down so 128 of them don't shout
+  lidProtected: '#2a6fae',
 
   azure: '#2b9cfc',
   blue: '#0066cc',

@@ -1,4 +1,4 @@
-/* Blast Radius control room — NMC² palette.
+/* Squawk control room — NMC² palette.
    Surfaces are square and flush to the screen edges; only controls get a 2px radius.
    Colour carries meaning: neutral = healthy, gold = reduced backup, red = failure,
    azure = the product acting (selection, protection, primary action), ice = safe placement. */
@@ -31,7 +31,6 @@
   font-family: 'Roboto', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-size: 13px;
   line-height: 1.5;
-  font-variant-numeric: tabular-nums;
   color: var(--text);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
@@ -57,6 +56,11 @@ ol, ul { list-style: none; }
 .tone-azure { color: var(--azure); }
 .tone-ice { color: var(--ice); }
 .mark { display: inline-block; width: 6px; height: 6px; flex: none; background: currentColor; }
+
+/* Tabular figures only where numbers change or line up. IDs such as node-417 keep their
+   normal hyphens (Inter's tabular set widens them if Roboto doesn't load). */
+.metric-value, .sim-clock-value, .step-num, .step-time, .feed-time, .count, .rail-meta,
+.detail-aside, .node-cell, .caption-step { font-variant-numeric: tabular-nums; }
 
 /* ---------- scene + HUD grid ---------- */
 .app { position: fixed; inset: 0; }
@@ -120,7 +124,7 @@ ol, ul { list-style: none; }
 }
 .step:hover { background: var(--hover); color: var(--text-2); }
 .step-num { font-size: 11px; letter-spacing: 0.04em; color: var(--text-3); }
-.step-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.step-title { min-width: 0; } /* wraps rather than cutting a step name short */
 .step-time { font-size: 11px; color: var(--text-3); }
 .step.past { color: var(--text-2); }
 .step.current { background: rgba(43, 156, 252, 0.08); color: var(--text); }
@@ -149,7 +153,7 @@ ol, ul { list-style: none; }
 .swatch-rack-ok { background: #2a2a2d; box-shadow: inset 0 -2px 0 #1d5d93; }
 .swatch-rack-warn { background: #2a2a2d; box-shadow: inset 0 3px 0 var(--gold); }
 .swatch-rack-bad { background: #2a2a2d; box-shadow: inset 0 3px 0 var(--red); }
-.swatch-protected { box-shadow: inset 0 0 0 1px var(--azure); }
+.swatch-protected { background: #2a2a2d; box-shadow: inset 0 3px 0 #2a6fae, inset 0 0 0 1px var(--azure); }
 .swatch-node-job, .swatch-node-safe, .swatch-node-risk, .swatch-node-failed { height: 5px; }
 .swatch-node-job { background: #1d3b5e; }
 .swatch-node-safe { background: var(--ice); }
@@ -164,10 +168,12 @@ ol, ul { list-style: none; }
 .rail-label { writing-mode: vertical-rl; transform: rotate(180deg); margin-top: 4px; font-size: 11px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-3); }
 
 /* ---------- top: context, clock, metrics (type over a scrim, no container) ---------- */
+/* The scrim stays dark behind the type and fades only in the padding below it,
+   so close-ups never put bright racks behind the numbers. */
 .top {
   grid-column: 2; grid-row: 1;
   padding: 0 24px 28px;
-  background: linear-gradient(to bottom, rgba(5, 5, 5, 0.94) 0%, rgba(5, 5, 5, 0.72) 60%, rgba(5, 5, 5, 0) 100%);
+  background: linear-gradient(to bottom, rgba(5, 5, 5, 0.96) 0%, rgba(5, 5, 5, 0.92) calc(100% - 28px), rgba(5, 5, 5, 0) 100%);
 }
 .topbar { height: var(--head); display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .context { display: flex; align-items: baseline; gap: 12px; font-size: 12px; color: var(--text-3); white-space: nowrap; }
@@ -201,7 +207,7 @@ ol, ul { list-style: none; }
 .caption {
   grid-column: 2; grid-row: 3;
   padding: 32px 24px 20px;
-  background: linear-gradient(to top, rgba(5, 5, 5, 0.94) 0%, rgba(5, 5, 5, 0.72) 60%, rgba(5, 5, 5, 0) 100%);
+  background: linear-gradient(to top, rgba(5, 5, 5, 0.96) 0%, rgba(5, 5, 5, 0.92) calc(100% - 32px), rgba(5, 5, 5, 0) 100%);
 }
 .caption-closed { padding-top: 16px; padding-bottom: 12px; }
 .caption-head { display: flex; align-items: center; gap: 12px; }

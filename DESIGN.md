@@ -234,7 +234,7 @@ Roadmap (Iteration 2): signed lease tokens that equipment systems verify ("no le
 
 ### 10.1 Control-room view
 
-1. **Floor map:** racks coloured by margin (green / yellow / red). Unprotected parts are highlighted. Job racks are outlined, and protected racks carry a lock.
+1. **Floor map:** healthy racks stay neutral; a rack one failure from an outage gets a gold top and one with no working feed a red top. Unprotected parts are highlighted, job nodes are blue, and protected racks get an azure top and a lock.
 2. **Decision feed:** every request, diagnosis and placement with its verdict and reason.
 3. **Mode toggle:** naive scheduler vs Blast Radius, run on the same scenario.
 
