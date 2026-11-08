@@ -26,7 +26,7 @@ In plain words:
 | `FRONTEND.md` | Control-room view features in P0 / P1 / P2 tiers, what not to build, endpoints, build order | **Current** |
 | `.claude/skills/blast-radius-dev/SKILL.md` | Step-by-step workflow Claude Code follows when changing code | **Current** |
 | `three-playground.html` | Standalone three.js sandbox of the demo hall that plays the story with 4 buttons. Exploration only | Prototype |
-| `agents/` | Nemotron model router (Brev primary, OpenRouter free backup), the fixer agent for low-criticality issues, a simulated Blast Radius it runs on, and the SpacetimeDB contract in `agents/README.md` | **Current** (branch `nemotron-init`) |
+| `agents/` | Nemotron model router (Brev primary, OpenRouter free backup), the fixer agent for low-criticality issues, the dependency agent for gray failures in services we rely on, a simulated Blast Radius they run on, and the SpacetimeDB contract in `agents/README.md` | **Current** (branch `nemotron-init`) |
 | `MERGE.md` | What the frontend and SpacetimeDB branches need to add for the agents' work to show up, plus merge notes for `nemotron-init` | **Current** (branch `nemotron-init`) |
 | Team doc: [Blast Radius — Team Pitch & Explainer](https://claude.ai/artifact/333tugs6RPJvKxT4egcKVG) | Explainer for teammates | **Partly outdated:** the demo plan section is current; the story and pitch sections still tell the old "3am battery" version. Use the pitch in §6 below. |
 
@@ -65,6 +65,7 @@ Add new feedback here. New ideas from mentors go to the roadmap (`DESIGN.md` §1
 - MCP server with 7 tools: `check_risk`, `simulate`, `request_lease`, `release_lease`, `get_events`, `diagnose_failure`, `safe_placement`
 - Scripted scheduler agent (naive mode vs Blast Radius mode) and cooling agent
 - Fixer agent (Nemotron): 4 low-criticality issue types fixed only through Blast Radius (DESIGN.md §8.2)
+- Dependency agent (Nemotron): catches gray failures in paging, building management readings and the revoked-key list (DESIGN.md §8.3); pending scope sign-off
 - One key per actor, row-level scopes, audit log
 - Control-room view: FRONTEND.md P0 + P1
 - One-click scenario + 100k-GPU scale test

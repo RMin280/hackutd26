@@ -2,8 +2,13 @@
 
 It lets the agents run end to end before the teammate's SpacetimeDB module exists, the
 way frontend/src/mock stands in for the UI. Same IDs and rules as that mock, plus what
-the fixer agent needs: maintenance leases on single nodes, routine requests, shift-lead
-approvals, finished jobs, an event list and an audit log.
+the fixer agent needs (maintenance leases on single nodes, routine requests, shift-lead
+approvals, finished jobs, an event list and an audit log) and what the dependency agent
+needs (features of the services we rely on, as our tests last saw them, and pages).
+
+Three rules come from those features. A CDU whose readings are stale counts as unknown,
+and unknown never counts as backup. While text paging is degraded, new pages go by
+email. While the revoked-key list is stale, facility changes need a shift lead.
 
 Rules follow DESIGN.md: margins come from explicit feed chains, a check touches only the
 racks below its target, every verdict carries a one-line reason. Time is simulated
@@ -13,7 +18,7 @@ minutes moved forward by the scenario (advance); nothing reads the wall clock.
 from __future__ import annotations
 
 import itertools
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from typing import Any, NamedTuple
 
 from .blast_radius import (
@@ -23,16 +28,19 @@ from .blast_radius import (
     Decision,
     Diagnosis,
     Event,
+    FeatureView,
     JobView,
     Lease,
     LeaseDecision,
     NodeView,
     OutOfScope,
     Owner,
+    Page,
     RackView,
     fmt_time,
     label,
 )
+from .mock_services import FEATURES, feature_covering
 
 ROWS, RACKS_PER_ROW, NODES_PER_RACK, RACKS_PER_CDU = 10, 16, 8, 5
 CDU_COUNT = ROWS * RACKS_PER_ROW // RACKS_PER_CDU  # 32
@@ -202,11 +210,13 @@ PERMISSIONS: dict[str, set[str]] = {
     "cooling_agent": {"maintenance", "notify", "record"},
     "scheduler_agent": {"protection", "notify", "escalate", "record"},
     "shift_lead": {"maintenance", "approve", "release_any", "dispatch", "notify", "escalate", "record"},
+    "dependency_watch": {"record_tests", "dispatch", "notify", "escalate", "record"},
     "facility": {"facility", "record"},
 }
 
 DEMO_ACTORS = (
     Actor("fixer-agent", "remediation_agent"),
+    Actor("dependency-agent", "dependency_watch"),
     Actor("cooling-agent", "cooling_agent"),
     Actor("scheduler-agent", "scheduler_agent"),
     Actor("shift-lead", "shift_lead"),
@@ -235,12 +245,18 @@ class MockBlastRadius:
         self.jobs: dict[str, dict[str, Any]] = {JOB_ID: {"status": "running", "since": 0, "nodes": JOB_SIZE}}
         self.leases: dict[str, Lease] = {}
         self.approvals: dict[str, dict[str, Any]] = {}
+        self.features_seen: dict[str, dict[str, Any]] = {
+            fid: {"state": "untested", "reason": "Not tested yet.", "since": None, "last_test": None, "last_good": None, "recovered_at": None, "says": "up"}
+            for fid in FEATURES
+        }
+        self.pages: dict[str, Page] = {}
         self.events: list[Event] = []
         self.audit: list[dict[str, Any]] = []
         self.available = True  # tests flip this to simulate an outage
         self._now = 0
         self._failures: dict[str, list[int]] = {}
         self._ids = itertools.count(1)
+        self._page_ids = itertools.count(1)
 
     @property
     def now(self) -> int:
@@ -261,7 +277,11 @@ class MockBlastRadius:
         self._up()
         m = self._margin(rack_id)
         protected = tuple(lease.id for lease in self._protection_by_rack().get(rack_id, ()))
-        return RackView(rack_id, self.site.racks[rack_id].row, m.power, m.cooling, m.margin, m.level, protected, _margin_reason(m))
+        unknown = self._unknown_parts()
+        unconfirmed = tuple(p for p in self.site.ancestors[rack_id] if p in unknown)
+        return RackView(
+            rack_id, self.site.racks[rack_id].row, m.power, m.cooling, m.margin, m.level, protected, _margin_reason(m, unconfirmed), unconfirmed
+        )
 
     def racks_below(self, part_id: str) -> list[str]:
         self._up()
@@ -348,6 +368,32 @@ class MockBlastRadius:
         entry.update(verdict=check.verdict, reason=check.reason)
         return check
 
+    def feature(self, feature_id: str) -> FeatureView:
+        self._up()
+        f, seen = FEATURES[feature_id], self.features_seen[feature_id]
+        return FeatureView(
+            f.id,
+            f.service,
+            f.name,
+            seen["state"],
+            seen["reason"],
+            seen["since"],
+            seen["last_test"],
+            seen["last_good"],
+            seen["recovered_at"],
+            seen["says"],
+            f.needs,
+            f.covers,
+            f.used_by,
+        )
+
+    def features(self) -> list[FeatureView]:
+        return [self.feature(fid) for fid in FEATURES]
+
+    def pages_since(self, since: int, channel: str | None = None) -> list[Page]:
+        self._up()
+        return [p for p in self.pages.values() if p.sent_at >= since and (channel is None or p.channel == channel)]
+
     # Actions ---------------------------------------------------------------------------
 
     def request_lease(
@@ -374,7 +420,12 @@ class MockBlastRadius:
             reason = f"{holder.name} already holds {own[0].id} on {label(target)} until {fmt_time(own[0].end)}."
             entry.update(verdict="allow", reason=reason, granted=True, lease=own[0].id)
             return LeaseDecision(True, "allow", reason, own[0])
-        check = self._check(target, holder) if minutes > 0 else Check("deny", "A lease needs a window longer than 0 minutes.")
+        if minutes <= 0:
+            check = Check("deny", "A lease needs a window longer than 0 minutes.")
+        elif self._fail_closed() and "approve" not in PERMISSIONS.get(a.role, set()):
+            check = Check("warn", "The revoked-key list is out of date, so facility changes need a shift lead until it's current.")
+        else:
+            check = self._check(target, holder)
         if check.verdict != "allow":
             reason = check.reason
             entry.update(verdict=check.verdict, reason=reason, granted=False)
@@ -451,6 +502,8 @@ class MockBlastRadius:
             reason = f"{a.name} released {lease_id}, held by {lease.actor}."
         elif lease.type == "protection" and "release_stale_protection" in perms:
             job = self.jobs.get(lease.job or "")
+            if self._fail_closed():
+                return self._refuse_release(entry, a.name, lease_id, "The revoked-key list is out of date, so releasing someone else's lock needs a shift lead until it's current.")
             if not job or job["status"] != "finished":
                 status = job["status"] if job else "unknown"
                 return self._refuse_release(entry, a.name, lease_id, f"{lease.job} is {status}, so its protection stays until {fmt_time(lease.end)}.")
@@ -464,17 +517,70 @@ class MockBlastRadius:
 
     def dispatch_tech(self, actor: str, target: str, trade: str, note: str) -> Decision:
         entry, a = self._enter(actor, "dispatch_tech", perm="dispatch", target=target, trade=trade)
-        reason = f"Sent a {trade} to {label(target)}."
-        entry.update(verdict="allow", reason=reason)
-        self._emit("tech_dispatched", a.name, target, reason, trade=trade, note=note)
+        page = self._send_page(a.name, trade, target, note)
+        reason = f"Sent a {trade} to {label(target)}{_how(page)}."
+        entry.update(verdict="allow", reason=reason, page=page.id)
+        self._emit("tech_dispatched", a.name, target, reason, trade=trade, note=note, page=page.id, channel=page.channel, page_status=page.status)
         return Decision(True, reason)
 
     def notify(self, actor: str, to: str, subject: str, message: str) -> Decision:
         entry, a = self._enter(actor, "notify", perm="notify", to=to, subject=subject)
-        reason = f"Told {to} about {label(subject)}."
-        entry.update(verdict="allow", reason=reason)
-        self._emit("notified", a.name, subject, reason, to=to, message=message)
+        page = self._send_page(a.name, to, subject, message)
+        reason = f"Told {to} about {label(subject)}{_how(page)}."
+        entry.update(verdict="allow", reason=reason, page=page.id)
+        self._emit("notified", a.name, subject, reason, to=to, message=message, page=page.id, channel=page.channel, page_status=page.status)
         return Decision(True, reason)
+
+    def resend_page(self, actor: str, page_id: str, channel: str = "email") -> Decision:
+        entry, a = self._enter(actor, "resend_page", perm="notify", page=page_id, channel=channel)
+        page = self.pages.get(page_id)
+        problem = None
+        if page is None:
+            problem = f"{page_id} doesn't exist."
+        elif channel not in ("text", "email"):
+            problem = f"There's no {channel} paging."
+        elif self.features_seen[f"paging.{channel}"]["state"] == "degraded":
+            problem = f"Paging by {channel} is down too."
+        if problem:
+            entry.update(verdict="deny", reason=problem)
+            return Decision(False, problem)
+        self.pages[page_id] = replace(page, status="resent")
+        reason = f"Re-sent {page_id} to {page.to} by {channel} (first sent at {fmt_time(page.sent_at)} by {page.channel})."
+        entry.update(verdict="allow", reason=reason)
+        self._emit("page_resent", a.name, page.subject, reason, page=page_id, to=page.to, channel=channel, first_sent=page.sent_at)
+        return Decision(True, reason)
+
+    def record_test(self, actor: str, feature_id: str, passed: bool, detail: str, service_says: str = "up") -> FeatureView:
+        """Our own test of a feature. Blast Radius sets the feature's state from the result
+        (never the agent) and writes an event whenever the state changes."""
+        entry, a = self._enter(actor, "record_test", perm="record_tests", feature=feature_id, passed=passed)
+        seen = self.features_seen[feature_id]
+        previous, previous_since, state = seen["state"], seen["since"], "working" if passed else "degraded"
+        seen.update(last_test=self._now, says=service_says, reason=detail)
+        if passed:
+            seen["last_good"] = self._now
+        if state != previous:
+            seen.update(state=state, since=self._now)
+            if previous == "degraded":
+                seen["recovered_at"] = self._now
+            if previous != "untested" or state == "degraded":  # the first passing test is just a baseline
+                f = FEATURES[feature_id]
+                self._emit(
+                    "feature_state",
+                    a.name,
+                    feature_id,
+                    detail,
+                    feature=feature_id,
+                    service=f.service,
+                    state=state,
+                    previous=previous,
+                    previous_since=previous_since,
+                    last_good=seen["last_good"],
+                    covers=list(f.covers),
+                    service_says=service_says,
+                )
+        entry.update(verdict="allow", reason=detail)
+        return self.feature(feature_id)
 
     def escalate(self, actor: str, subject: str, to: str, reason: str) -> Decision:
         entry, a = self._enter(actor, "escalate", perm="escalate", subject=subject, to=to)
@@ -573,6 +679,22 @@ class MockBlastRadius:
     def _active(self, lease: Lease) -> bool:
         return lease.start <= self._now < lease.end
 
+    def _unknown_parts(self) -> set[str]:
+        """Parts whose state can't be confirmed, because the feature reporting them is degraded."""
+        return {p for fid, seen in self.features_seen.items() if seen["state"] == "degraded" for p in FEATURES[fid].covers}
+
+    def _fail_closed(self) -> bool:
+        return self.features_seen["keys.revocation"]["state"] == "degraded"
+
+    def _send_page(self, by: str, to: str, subject: str, message: str) -> Page:
+        """Text first; email while text paging is degraded; unconfirmed when both are."""
+        text_ok = self.features_seen["paging.text"]["state"] != "degraded"
+        email_ok = self.features_seen["paging.email"]["state"] != "degraded"
+        channel, status = ("text", "sent") if text_ok else ("email", "sent") if email_ok else ("text", "unconfirmed")
+        page = Page(f"page-{next(self._page_ids)}", to, subject, message, channel, self._now, status, by)
+        self.pages[page.id] = page
+        return page
+
     def _protection_by_rack(self) -> dict[str, list[Lease]]:
         out: dict[str, list[Lease]] = {}
         for lease in self.leases.values():
@@ -585,6 +707,7 @@ class MockBlastRadius:
         """remaining backup = working feeds - 1, per DESIGN.md §3.2."""
         r = self.site.racks[rack_id]
         offline = {x.target for x in self.leases.values() if x.type == "maintenance" and self._active(x)}
+        offline |= self._unknown_parts()  # a part we can't confirm never counts as backup
         if extra_offline:
             offline.add(extra_offline)
 
@@ -638,22 +761,31 @@ class MockBlastRadius:
         locked = [rid for rid, level in dropped if rid in protected and level != "green"]
 
         if red or locked:
-            repair = list(dict.fromkeys(p for rid in red for p in self.site.ancestors[rid] if self.part_state[p] != "ok"))
+            unknown = self._unknown_parts()
+            above_red = list(dict.fromkeys(p for rid in red for p in self.site.ancestors[rid]))
+            repair = [p for p in above_red if self.part_state[p] != "ok"]
+            blind = [p for p in above_red if p in unknown and self.part_state[p] == "ok"]
+            stale = list(dict.fromkeys(f for f in (feature_covering(p) for p in blind) if f))
             locks = list({lease.id: lease for rid in locked for lease in protected[rid]}.values())
             reason = ""
             if red:
                 kind = "cooling" if self.site.part_type[part] in ("cdu", "chiller") else "power"
-                why = f" ({', '.join(f'{label(p)} {self.part_state[p]}' for p in repair)})" if repair else ""
+                causes = [f"{label(p)} {self.part_state[p]}" for p in repair] + [f"{label(p)} unconfirmed" for p in blind]
+                why = f" ({', '.join(causes)})" if causes else ""
                 reason = f"{name} is the only {kind} feed for {len(red)} racks{why}; taking it offline makes them red."
             if locked:
                 jobs = ", ".join(dict.fromkeys(lease.job or "a job" for lease in locks))
                 lead = " It would also drop" if reason else f"Taking {name} offline drops"
                 reason += f"{lead} {len(locked)} racks protected for {jobs} below full backup."
             safe = [f"after {', '.join(label(p) for p in repair)} repair"] if repair else []
+            if stale:
+                safe.append("once CDU readings are fresh")
             if locks:
                 safe.append(f"after protection ends ({fmt_time(max(lease.end for lease in locks))})")
-            blockers = tuple(Blocker("part_repair", p) for p in repair) + tuple(
-                Blocker("lease_ends", lease.id, lease.end) for lease in locks
+            blockers = (
+                tuple(Blocker("part_repair", p) for p in repair)
+                + tuple(Blocker("feature_ok", f) for f in stale)
+                + tuple(Blocker("lease_ends", lease.id, lease.end) for lease in locks)
             )
             return Check("deny", reason, " and ".join(safe), blockers)
 
@@ -663,7 +795,15 @@ class MockBlastRadius:
         return Check("allow", f"{name} can go offline: every rack below it keeps full backup.")
 
 
-def _margin_reason(m: Margin) -> str:
+def _how(page: Page) -> str:
+    if page.status == "unconfirmed":
+        return ", but no paging channel is confirmed working"
+    return " (by email: text paging is down)" if page.channel == "email" else ""
+
+
+def _margin_reason(m: Margin, unconfirmed: tuple[str, ...] = ()) -> str:
+    if unconfirmed and m.level != "green":
+        return f"Can't confirm backup: readings for {', '.join(label(p) for p in unconfirmed)} are stale, so they don't count."
     if m.level == "green":
         return f"Full backup: {m.power + 1} working power feeds and {m.cooling + 1} working cooling feeds."
     if m.level == "yellow":

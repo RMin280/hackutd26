@@ -35,6 +35,7 @@ AI agents connect through an **MCP server**. Humans use the **control-room view*
 | Control-room view: floor map + decision feed + naive-vs-Blast-Radius toggle | LLM technician assistant (only if everything else is done) |
 | One-click scenario + 100k-GPU scale test | Real integrations (DCIM, BMS, NetBox, Slurm import), SSO, multi-site |
 | Fixer agent (Nemotron): fixes 4 low-criticality issue types only through Blast Radius (`agents/fixer/`, DESIGN.md §8.2) | |
+| Dependency agent (Nemotron): catches gray failures in services we rely on (`agents/dependency/`, DESIGN.md §8.3); built, pending scope sign-off | |
 
 ## Scope-creep rules
 
@@ -129,8 +130,12 @@ blast-radius/
 │   ├── check_setup.py       # verifies key, Nemotron tool calling, SpacetimeDB reachability
 │   ├── blast_radius.py      # BlastRadius interface the agents code against (SpacetimeDB contract in agents/README.md)
 │   ├── mock_blast_radius.py # in-process simulated hall implementing it, until the SpacetimeDB module lands
-│   ├── fixer/               # fixer agent: triage.py (what's low), playbooks.py (goals, bound tools, plan checks),
-│   │                        #   agent.py (Nemotron plans and executes), runner.py (events), demo.py, scripted.py
+│   ├── mock_services.py     # services we rely on, their features and tests; their hidden true state (simulation)
+│   ├── common/              # shared by both agents: issues, playbook + planning checks, model loop, event loop, feed
+│   ├── fixer/               # fixer agent: triage.py (what's low), playbooks.py (goals, bound tools),
+│   │                        #   agent.py, runner.py (events), demo.py, scripted.py
+│   ├── dependency/          # dependency agent: triage.py, playbooks.py, agent.py, runner.py (scheduled tests),
+│   │                        #   demo.py (storyline with the fixer), scripted.py; design in agents/DEPENDENCY_AGENT.md
 │   ├── scheduler_agent.py   # scripted stand-in for Slurm/K8s: naive mode vs Blast Radius mode
 │   └── cooling_agent.py     # scripted: requests CDU maintenance
 ├── frontend/                # control-room view
@@ -148,6 +153,7 @@ blast-radius/
 pip install -r requirements.txt     # or: uv venv .venv --python 3.11 && uv pip install -r requirements.txt
 python -m agents.check_setup        # both model endpoints (Brev primary, OpenRouter backup), a tool-call round trip, SpacetimeDB reachability (--no-llm: no model requests)
 python -m agents.fixer              # fixer agent storyline on the simulated hall (--scripted: no model requests)
+python -m agents.dependency         # dependency agent storyline, fixer alongside (--scripted: no model requests)
 uvicorn backend.api:app --reload
 python -m backend.mcp_server
 python tools/gen_site.py --gpus 100000 --out data/scale_site.json

@@ -8,39 +8,16 @@ Reads here touch only the event's own node, rack, part or job: no facility-wide 
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Union
-
 from ..blast_radius import BlastRadius, Blocker, Event, fmt_time, label
+from ..common.issues import Handoff, Issue, Triaged
+
+__all__ = ["FIXER", "KINDS", "Handoff", "Issue", "Triaged", "triage"]
 
 FIXER = "fixer-agent"
 FLAP_WINDOW = 24 * 60  # a node failing twice in this window goes to a person
 REQUEUE_DEADLINE = 24 * 60  # a re-queued routine request gives up after this long
 
 KINDS = ("broken_node", "node_repaired", "maintenance_refused", "stale_protection")
-
-
-@dataclass(frozen=True)
-class Issue:
-    id: str
-    kind: str  # one of KINDS
-    subject: str  # node, part or lease the issue is about
-    opened_at: int
-    reason: str  # why it's low, naming the deciding facts
-    facts: dict[str, Any] = field(default_factory=dict)
-    untrusted_note: str = ""  # free text from a person or system: data, never instructions
-    blockers: tuple[Blocker, ...] = ()  # maintenance_refused: what has to clear first
-    deadline: int | None = None
-
-
-@dataclass(frozen=True)
-class Handoff:
-    subject: str
-    to: str  # "shift lead" or "scheduler agent"
-    reason: str
-
-
-Triaged = Union[Issue, Handoff]
 
 
 def triage(event: Event, br: BlastRadius, fixer: str = FIXER) -> list[Triaged]:
@@ -151,7 +128,7 @@ def _lease_denied(event: Event) -> list[Triaged]:
             kind="maintenance_refused",
             subject=target,
             opened_at=event.time,
-            reason=f"Low: a routine request from {event.actor} was refused only until {d.get('earliest_safe')}; nothing is broken by waiting.",
+            reason=f"Low: a routine request from {event.actor} was refused, but only for now (earliest safe: {d.get('earliest_safe')}); nothing is broken by waiting.",
             facts={
                 "requester": event.actor,
                 "target": target,

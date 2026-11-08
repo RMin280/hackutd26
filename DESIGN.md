@@ -117,7 +117,7 @@ Leases auto-expire and are written to the audit log.
 
 ### 4.3 Events
 
-Ordered list: `{seq, time, type, parts, racks, jobs, reason}`. Types: `state_change`, `margin_change`, `diagnosis`, `placement`, `lease_granted`, `lease_denied`, `lease_released`, `lease_expired`, `job_status`, plus the fixer agent's `agent_plan`, `tech_dispatched`, `notified`, `approval_requested`, `escalated`, `agent` (§8.2). Agents **poll** `get_events(since)`; the UI receives the same events over SSE.
+Ordered list: `{seq, time, type, parts, racks, jobs, reason}`. Types: `state_change`, `margin_change`, `diagnosis`, `placement`, `lease_granted`, `lease_denied`, `lease_released`, `lease_expired`, `job_status`, plus the fixer agent's `agent_plan`, `tech_dispatched`, `notified`, `approval_requested`, `escalated`, `agent` (§8.2) and the dependency agent's `feature_state`, `page_resent` (§8.3). Agents **poll** `get_events(since)`; the UI receives the same events over SSE.
 
 ## 5. Failure diagnosis (`diagnose.py`)
 
@@ -215,6 +215,7 @@ Every call carries an API key; scope is checked first; every call is logged.
   - *Blast Radius mode:* it calls `diagnose_failure`, then `safe_placement`, restarts, and requests a protection lease.
 - **Cooling agent** (scripted): requests a maintenance lease on a CDU at a set time.
 - **Fixer agent** (Nemotron, §8.2): fixes low-criticality issues on its own, only through Blast Radius.
+- **Dependency agent** (Nemotron, §8.3): catches services that say they're up while a feature we rely on is broken.
 - **LLM technician assistant:** roadmap, built only if everything else is done. It may only call tools.
 
 ### 8.2 Fixer agent (low-criticality fixes)
@@ -237,6 +238,23 @@ An LLM agent that clears low-criticality issues so people only see the ones that
 **Guardrails, enforced in code:** each issue type gets only its own bound tools; after a refusal only the playbook's follow-ups are allowed; deterministic checks confirm the result once the model says it's done; at most 10 model calls per issue; report text is fenced as untrusted data; it fails closed when the model or Blast Radius is unreachable.
 
 **What the backend adds for it:** maintenance leases on single nodes, a `routine` flag on requests, a `finished` job state, booking on behalf of a requester, shift-lead approvals, and the events listed in §4.3. Contract: `agents/README.md`.
+
+### 8.3 Dependency agent (gray failures)
+
+A second Nemotron agent watches the services Blast Radius and the agents rely on: paging, the building management system's CDU readings, and the revoked-key list. Their own health checks say "up" even when something underneath has failed. So we test the features we use from our side, every 5 minutes, in code, at no model cost.
+
+Blast Radius sets each feature's state from those results and applies three rules:
+- A CDU whose readings are stale is unknown, and unknown never counts as backup.
+- While text paging is degraded, pages go by email.
+- While the revoked-key list is stale, facility changes need a shift lead (fail closed).
+
+The agent then plans and carries out the response, with the same guardrails as the fixer:
+- **Paging:** re-sends pages from the blind window.
+- **Stale readings:** gathers the racks that can't confirm backup and any leases granted on stale readings, then hands off.
+- **Stale revoked-key list:** pages security, then hands off.
+- **Recovery:** confirms it with a second test.
+
+It coordinates with the fixer only through Blast Radius. Details and the contract: `agents/DEPENDENCY_AGENT.md`.
 
 ## 9. Security (Iteration 1 baseline)
 
@@ -299,6 +317,7 @@ New ideas go into this table, not into the code.
 - **Security:** missing or invalid key refused; out-of-scope row refused; every call logged; free text doesn't change verdicts.
 - **Scenario:** naive mode crashes twice; Blast Radius mode restarts once and the cooling lease is denied.
 - **Fixer agent:** triage sorts each issue type and each hand-off case correctly; the storyline fixes one issue of each type; tools outside the playbook, actions after a refusal, "done" without the result, the step budget and both outages all end safely (`tests/test_triage.py`, `tests/test_fixer.py`).
+- **Dependency agent:** our tests see what services don't report; Blast Radius sets feature states and applies the three rules; triage; the email fallback and failing closed; the storyline with the fixer (`tests/test_dependency.py`).
 - **Scale (`-m scale`):** every limit in §7.2.
 
 ## 13. Open questions

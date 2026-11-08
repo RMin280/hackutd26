@@ -52,15 +52,49 @@ class RackView:
     level: Literal["green", "yellow", "red"]
     protected_by: tuple[str, ...]  # protection lease ids covering this rack
     reason: str
+    unconfirmed: tuple[str, ...] = ()  # parts above it whose state can't be confirmed (stale readings)
 
 
 @dataclass(frozen=True)
 class Blocker:
     """Something that has to change before a refused action can be checked again."""
 
-    kind: Literal["part_repair", "lease_ends"]
-    id: str  # the part to repair, or the lease that has to end
+    kind: Literal["part_repair", "lease_ends", "feature_ok"]
+    id: str  # the part to repair, the lease that has to end, or the feature that has to work again
     until: int | None = None  # minute the lease ends, if known
+
+
+@dataclass(frozen=True)
+class FeatureView:
+    """A feature of a service we rely on, as our own tests last saw it."""
+
+    id: str
+    service: str
+    name: str
+    state: Literal["untested", "working", "degraded"]
+    reason: str
+    since: int | None  # minute the state last changed
+    last_test: int | None
+    last_good: int | None  # minute of the last passing test
+    recovered_at: int | None  # minute it last went from degraded back to working
+    service_says: str  # the service's own health report, e.g. "up"
+    needs: tuple[str, ...]  # dependencies this feature needs
+    covers: tuple[str, ...]  # parts whose state it reports (building management)
+    used_by: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class Page:
+    """One page to a person: a tech dispatch or a notice."""
+
+    id: str
+    to: str
+    subject: str
+    message: str
+    channel: Literal["text", "email"]
+    sent_at: int
+    status: Literal["sent", "unconfirmed", "resent"]
+    by: str
 
 
 @dataclass(frozen=True)
@@ -146,6 +180,9 @@ class BlastRadius(Protocol):
     def failures_since(self, node_id: str, since: int) -> int: ...
     def diagnose_failure(self, node_id: str) -> Diagnosis: ...
     def simulate(self, actor: str, target: str) -> Check: ...
+    def feature(self, feature_id: str) -> FeatureView: ...
+    def features(self) -> list[FeatureView]: ...
+    def pages_since(self, since: int, channel: str | None = None) -> list[Page]: ...
 
     # Actions
     def request_lease(
@@ -164,6 +201,8 @@ class BlastRadius(Protocol):
     def request_approval(self, actor: str, target: str, minutes: int, summary: str, requested_for: str) -> Decision: ...
     def escalate(self, actor: str, subject: str, to: str, reason: str) -> Decision: ...
     def record(self, actor: str, type: str, subject: str, reason: str, **data: Any) -> Event: ...
+    def record_test(self, actor: str, feature_id: str, passed: bool, detail: str, service_says: str = "up") -> FeatureView: ...
+    def resend_page(self, actor: str, page_id: str, channel: str = "email") -> Decision: ...
 
 
 def label(part_id: str) -> str:
@@ -177,6 +216,14 @@ def label(part_id: str) -> str:
         (r"chiller-(\d+)", "Chiller {0}"),
         (r"sw-leaf-r(\d+)", "Leaf R{0}"),
         (r"sw-spine-(\d+)", "Spine {0}"),
+        (r"fieldbus-(\d+)", "Gateway {0}"),
+        (r"bms\.cooling\.(\d+)", "Gateway {0} readings"),
+        (r"paging\.text", "Text paging"),
+        (r"paging\.email", "Email paging"),
+        (r"keys\.revocation", "The revoked-key list"),
+        (r"(sms)-gateway", "SMS gateway"),
+        (r"email-(relay)", "Email relay"),
+        (r"revocation-(feed)", "Revoked-key feed"),
     ):
         m = re.fullmatch(pattern, part_id)
         if m:

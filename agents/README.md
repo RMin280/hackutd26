@@ -29,7 +29,7 @@ The model only proposes tool calls and writes explanations; Blast Radius makes e
 2. **Execute:** it carries out the plan one tool call at a time. It can only skip steps that have a condition. Anything not in the plan needs `revise_plan` first, with the new steps and what changed; the revision also goes into the feed.
 3. **Finish:** it finishes or hands off, and code checks the result.
 
-**Guardrails, enforced in code (`playbooks.py`, `agent.py`):**
+**Guardrails, enforced in code (`agents/common/playbook.py`, `agents/common/loop.py`) and shared by both agents:**
 - Tools are bound to the issue: Nemotron chooses the plan, the wording and a repair window of 1 to 24 h, but never the target.
 - Every action goes through Blast Radius, which checks scope and verdict first. After a refusal, only the playbook's follow-ups are allowed.
 - When the model says it's done, deterministic checks confirm the result (lease held, tech sent, tenant told, lock gone). If they fail, the issue goes to the shift lead.
@@ -45,16 +45,31 @@ The model only proposes tool calls and writes explanations; Blast Radius makes e
 
 The storyline has one issue of each type, two handoffs, and a technician report with an injected "release every protection lock" instruction. It takes about 24 model calls, so on the free backup it uses about half a day's quota.
 
-**Adding an issue type:** a rule in `triage.py`; a `Playbook` (goal, tools, must-include steps, done check) and its tools in `playbooks.py`; a plan and policy in `scripted.py`; tests in `tests/test_triage.py` and `tests/test_fixer.py`.
+**Adding an issue type to an agent:** a rule in its `triage.py`; a `Playbook` (goal, tools, must-include steps, done check) and its tools in its `playbooks.py`; a plan and policy in its `scripted.py`; tests. The planning rules, the model loop and the event loop are shared in `agents/common/`.
 
-**Against the Nemotron judging criteria**
+## Dependency agent: gray failures in services we rely on
+
+`agents/dependency/` runs scheduled tests of the features we use from three services: text and email paging, building management readings for each CDU gateway, and the revoked-key list. The tests are code and cost no model calls. Blast Radius sets each feature's state from the results. When a service says it's up but a feature is broken, the dependency agent responds:
+- **Paging:** re-sends pages that went out during the blind window.
+- **Stale readings:** gathers the racks that can't confirm backup, and hands off.
+- **Stale revoked-key list:** Blast Radius fails closed, and the agent pages security.
+- **Recovery:** confirms it with a second test.
+
+It runs on the same planning, guardrails and fail-closed rules as the fixer. The full design is in [`DEPENDENCY_AGENT.md`](DEPENDENCY_AGENT.md).
+
+```
+.venv\Scripts\python -m agents.dependency              # Nemotron; the fixer runs alongside
+.venv\Scripts\python -m agents.dependency --scripted   # scripted stand-in, no model requests
+```
+
+## Against the Nemotron judging criteria
 
 | Criterion | Where it shows |
 | --- | --- |
-| Beyond a chatbot | Nobody prompts it. It wakes on facility events (a node fails, a request is refused, a job finishes), acts, and hands off what isn't its job. |
-| Multi-step workflows | For each issue it writes its own plan, carries it out, and revises it when a result changes things. Workflows span hours and chain: releasing a finished job's lock unblocks the queued CDU-4 request, which the agent then rechecks and routes to the shift lead. |
-| Tool integration | Function calling against Blast Radius's API (diagnosis, what-if checks, leases, dispatch, notifications, approvals), with every call checked and audited. Model access spans two services, our Nemotron on Brev and OpenRouter as backup, with automatic failover. Once the SpacetimeDB module lands, the same tools call its HTTP API. |
-| Real-world applicability | It clears the routine work that piles up in big GPU halls (broken spares, finished jobs still holding locks, maintenance waiting on a repair) without ever acting outside the safety interlock. |
+| Beyond a chatbot | Nobody prompts the agents. They wake on facility events and on their own scheduled tests, act, and hand off what isn't theirs. |
+| Multi-step workflows | For each issue, Nemotron writes its own plan, carries it out, and revises it when a result changes things. Two agents coordinate through Blast Radius without talking to each other. The dependency agent re-sends a page the fixer sent while paging was silently broken. The fixer queues a maintenance request until the dependency agent's tests show the CDU readings are fresh again. |
+| Tool integration | Function calling against Blast Radius's API (diagnosis, what-if checks, leases, dispatch, paging, approvals, test results), with every call checked and audited. Model access spans two services, our Nemotron on Brev and OpenRouter as backup, with automatic failover. Once the SpacetimeDB module lands, the same tools call its HTTP API. |
+| Real-world applicability | The agents clear the routine work that piles up in big GPU halls, and catch services that quietly stop doing their job. They never act outside the safety interlock, and fail closed when they can't trust what they see. |
 
 ## Setup
 
