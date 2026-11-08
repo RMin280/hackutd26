@@ -203,10 +203,6 @@ function takeOverControls(): void {
       useStore.setState({ notice: '' });
       call('completeWork', { id: BigInt(id), note });
     },
-    seedShift: () => {
-      useStore.setState({ notice: '' });
-      call('seedShift', {});
-    },
   });
 }
 

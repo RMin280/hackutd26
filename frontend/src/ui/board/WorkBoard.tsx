@@ -595,7 +595,6 @@ export function WorkBoard() {
   const notice = useStore((s) => s.notice);
   const me = useStore((s) => s.me);
   const stepIndex = useStore((s) => s.stepIndex);
-  const seedShift = useStore((s) => s.seedShift);
   const [open, setOpen] = useState<Record<Lane, boolean>>(DEFAULT_OPEN);
 
   // A worker's screen remembers its trade.
@@ -635,11 +634,6 @@ export function WorkBoard() {
       <header className="board-head">
         {boardOnly ? <span className="wordmark">Squawk</span> : <ViewTabs />}
         <div className="board-end">
-          {!boardOnly && (
-            <button className="board-btn" onClick={seedShift} disabled={!liveEnabled} title={liveEnabled ? "A shift's worth of work, each request through the interlock" : 'Live only'}>
-              Load a shift
-            </button>
-          )}
           <p className="sim-clock">
             <span className="sim-clock-value">{stepIndex < 0 && world.now === 0 ? 'T+0m' : clock(world.now)}</span>simulated
           </p>

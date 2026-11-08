@@ -182,7 +182,6 @@ All tables are public except `audit`, `actor`, `settings` and `incident`. Rows m
 | `set_part_state(part, state)`, `set_node_state(node, state)` | facility, shift_lead, admin |
 | `advance_clock(minutes)` | shift_lead, admin |
 | `scenario_start(mode)`, `scenario_next(mode)`, `scenario_goto(mode, step)`, `reset_demo()`, `seed_diagnostics()` | shift_lead, admin |
-| `seed_shift()` | shift_lead, admin: a busy shift's work laid over the current hall as scripted actors, every request through the interlock (`src/core/shift.ts`), for the view's work board. Idempotent by ticket (`shift-*`) |
 | `self_register(name, role, rows)` | anyone, while open registration is on (not admin) |
 | `register_actor(identity, name, role, rows)`, `set_open_registration(open)`, `seed_scale_site(gpus)`, `claim_admin(name)` | admin (`claim_admin` only while there is none) |
 

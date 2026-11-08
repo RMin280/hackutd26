@@ -57,7 +57,6 @@ import ScenarioNextReducer from "./scenario_next_reducer";
 import ScenarioStartReducer from "./scenario_start_reducer";
 import SeedDiagnosticsReducer from "./seed_diagnostics_reducer";
 import SeedScaleSiteReducer from "./seed_scale_site_reducer";
-import SeedShiftReducer from "./seed_shift_reducer";
 import SelfRegisterReducer from "./self_register_reducer";
 import SetNodeStateReducer from "./set_node_state_reducer";
 import SetOpenRegistrationReducer from "./set_open_registration_reducer";
@@ -320,7 +319,6 @@ const reducersSchema = __reducers(
   __reducerSchema("scenario_start", ScenarioStartReducer),
   __reducerSchema("seed_diagnostics", SeedDiagnosticsReducer),
   __reducerSchema("seed_scale_site", SeedScaleSiteReducer),
-  __reducerSchema("seed_shift", SeedShiftReducer),
   __reducerSchema("self_register", SelfRegisterReducer),
   __reducerSchema("set_node_state", SetNodeStateReducer),
   __reducerSchema("set_open_registration", SetOpenRegistrationReducer),

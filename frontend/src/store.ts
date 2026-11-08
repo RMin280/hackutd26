@@ -84,8 +84,6 @@ interface AppState {
   /** The work board's buttons. Bookkeeping on the backend (accept_work / complete_work); the mock has no work table. */
   acceptWork: (id: string) => void;
   completeWork: (id: string, note: string) => void;
-  /** A busy shift's worth of work laid over the hall through the interlock (seed_shift), for the board. */
-  seedShift: () => void;
 }
 
 const MOCK_BOARD_CAPTION = 'The work board acts on the backend: start the view in live mode (VITE_SPACETIMEDB_URI) to take work on or complete it.';
@@ -215,7 +213,6 @@ export const useStore = create<AppState>((set, get) => ({
   setNotice: (notice) => set({ notice }),
   acceptWork: () => set({ notice: MOCK_BOARD_CAPTION }),
   completeWork: () => set({ notice: MOCK_BOARD_CAPTION }),
-  seedShift: () => set({ notice: MOCK_BOARD_CAPTION }),
 }));
 
 export const stepCount = (mode: Mode) => SCENARIOS[mode].length;

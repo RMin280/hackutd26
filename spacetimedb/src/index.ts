@@ -14,7 +14,6 @@ import { schema, SenderError, t, table, type InferSchema, type ReducerCtx } from
 import * as cmd from './core/commands';
 import * as lab from './core/lab';
 import * as scenario from './core/scenario';
-import * as shift from './core/shift';
 import type { Store } from './core/store';
 import { RequestError } from './core/types';
 
@@ -533,10 +532,6 @@ export const scenarioNext = spacetimedb.reducer({ mode: t.string() }, (ctx, { mo
 export const scenarioGoto = spacetimedb.reducer({ mode: t.string(), step: t.u32() }, (ctx, { mode, step }) =>
   run(ctx, (s, me) => scenario.scenarioGoto(s, me, mode, step)),
 );
-
-/** A busy shift's worth of work laid over the current hall, through the interlock, for the work
- *  board (shift lead or admin). Idempotent: already-seeded tickets are left alone. */
-export const seedShift = spacetimedb.reducer((ctx) => run(ctx, (s, me) => shift.seedShift(s, me)));
 
 /** A generated site of about `gpus` GPUs for scale tests. The 3D view only draws the demo hall. */
 export const seedScaleSite = spacetimedb.reducer({ gpus: t.u32() }, (ctx, { gpus }) =>
