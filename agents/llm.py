@@ -5,7 +5,7 @@ primary is unreachable, overloaded or not set up, it resends the same request to
 backup (NVIDIA Nemotron 3 Ultra (free) on OpenRouter) and stays on the backup for a
 cooldown before trying the primary again.
 
-The model only proposes tool calls and writes explanations. Blast Radius makes every
+The model only proposes tool calls and writes explanations. Squawk makes every
 safety decision and the agent runtime enforces it, so nothing here holds safety logic
 (CLAUDE.md: "LLMs may call tools; they never make the decision"). If both endpoints
 fail, ModelUnavailable reaches the agent, which then does nothing and escalates.
@@ -27,7 +27,7 @@ from .config import Endpoint, Settings
 
 log = logging.getLogger(__name__)
 
-APP_TITLE = "Blast Radius agents"
+APP_TITLE = "Squawk agents"
 FREE_TIER_INTERVAL = 60 / 20  # seconds between requests to an OpenRouter :free model (20/min)
 # Provider-specific reasoning fields on assistant messages. OpenRouter asks for its
 # reasoning_details back unmodified; other servers get none of them.

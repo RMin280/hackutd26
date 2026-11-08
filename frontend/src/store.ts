@@ -56,7 +56,7 @@ const site = buildSite();
 
 export const useStore = create<AppState>((set, get) => ({
   site,
-  mode: 'blast_radius',
+  mode: 'squawk',
   stepIndex: -1,
   world: initialWorld(site),
   events: [],

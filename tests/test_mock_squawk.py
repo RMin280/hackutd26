@@ -1,19 +1,19 @@
-"""The simulated Blast Radius the agents act on: same hall as frontend/src/mock, and the
+"""The simulated Squawk the agents act on: same hall as frontend/src/mock, and the
 guard rules the fixer agent depends on (DESIGN.md §3-§6)."""
 
 from __future__ import annotations
 
 import pytest
 
-from agents.blast_radius import BlastRadiusUnavailable, OutOfScope
-from agents.mock_blast_radius import JOB_ID, Actor, MockBlastRadius
+from agents.squawk import SquawkUnavailable, OutOfScope
+from agents.mock_squawk import JOB_ID, Actor, MockSquawk
 
 FIXER = "fixer-agent"
 
 
 @pytest.fixture
-def br() -> MockBlastRadius:
-    return MockBlastRadius()
+def br() -> MockSquawk:
+    return MockSquawk()
 
 
 def test_hall_matches_the_frontend_mock(br):
@@ -123,7 +123,7 @@ def test_leases_expire_with_an_event(br):
 
 
 def test_scope_is_checked_first_and_every_action_is_audited():
-    br = MockBlastRadius(actors=(Actor(FIXER, "remediation_agent", rows=frozenset({9})),))
+    br = MockSquawk(actors=(Actor(FIXER, "remediation_agent", rows=frozenset({9})),))
     with pytest.raises(OutOfScope):
         br.request_lease(FIXER, target="node-1205", minutes=60)  # row 10
     assert br.audit[-1]["verdict"] == "out_of_scope" and br.leases == {}
@@ -133,7 +133,7 @@ def test_scope_is_checked_first_and_every_action_is_audited():
     assert [a["call"] for a in br.audit] == ["request_lease"] * 3
 
 
-def test_unreachable_blast_radius_raises(br):
+def test_unreachable_squawk_raises(br):
     br.available = False
-    with pytest.raises(BlastRadiusUnavailable):
+    with pytest.raises(SquawkUnavailable):
         br.get_events()

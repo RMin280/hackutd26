@@ -4,7 +4,7 @@ playbooks, and the ToolBox, which is the model's only way to act.
 The model plans its own steps. Its first move is submit_plan, which code checks: only
 this playbook's tools, every action after its check, the goal covered, and a way to
 stop. It then has to follow that plan, or call revise_plan before doing anything the
-plan doesn't say. Every action goes through Blast Radius, and after a refusal only the
+plan doesn't say. Every action goes through Squawk, and after a refusal only the
 playbook's follow-ups are allowed. These rules live here in code, not in the prompt.
 """
 
@@ -14,7 +14,7 @@ import json
 from dataclasses import asdict, dataclass, field
 from typing import Any, Callable
 
-from ..blast_radius import BlastRadius, Blocker, Event, OutOfScope
+from ..squawk import Squawk, Blocker, Event, OutOfScope
 from .issues import Issue
 
 MAX_TEXT = 400  # characters kept from any note or message the model writes
@@ -36,7 +36,7 @@ class Run:
     """One agent run on one issue."""
 
     issue: Issue
-    br: BlastRadius
+    br: Squawk
     actor: str
     start_seq: int  # events after this one belong to this run
     status: str = "open"  # open | fixed | handed_off | waiting
@@ -80,7 +80,7 @@ class Tool:
     handler: Handler
     params: dict[str, dict[str, Any]] = field(default_factory=dict)
     required: tuple[str, ...] = ()
-    acts: bool = False  # changes something, so Blast Radius may refuse it
+    acts: bool = False  # changes something, so Squawk may refuse it
     needs: tuple[str, ...] = ()  # checks that must run first: look before you leap
     offered: Callable[[Run], bool] = lambda run: True
     gate: Callable[[Run], str | None] = lambda run: None  # why it isn't allowed right now
@@ -112,7 +112,7 @@ def _finish(run: Run, args: dict[str, Any]) -> dict[str, Any]:
 COMMON_TOOLS: dict[str, Tool] = {
     "escalate": Tool(
         "escalate",
-        "Hand this issue to the shift lead and stop. Always allowed. Use it when the facts don't fit the goal or Blast Radius refuses an action.",
+        "Hand this issue to the shift lead and stop. Always allowed. Use it when the facts don't fit the goal or Squawk refuses an action.",
         _escalate,
         {"reason": text_param("One line naming the deciding facts.")},
         ("reason",),
@@ -174,7 +174,7 @@ class ToolBox:
             run.br.record(run.actor, "agent_step", run.issue.subject, f"Blocked: the model asked for {name}, which this issue's playbook doesn't allow.")
             return {"error": f"{name} isn't available for this issue. Available: {', '.join(self.tools)}."}
         if run.refused and name not in self.playbook.after_refusal and name not in ALWAYS:
-            return {"error": f"Blast Radius refused the last action ({run.refused}). Allowed now: {', '.join(sorted(self.playbook.after_refusal))}."}
+            return {"error": f"Squawk refused the last action ({run.refused}). Allowed now: {', '.join(sorted(self.playbook.after_refusal))}."}
 
         index = None
         if name not in ALWAYS:

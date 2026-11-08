@@ -1,4 +1,4 @@
-// DESIGN.md §10.2 "Big job failure", Blast Radius mode, driven through the same
+// DESIGN.md §10.2 "Big job failure", Squawk mode, driven through the same
 // commands the reducers call. This is the minimum demo (§10.3).
 
 import assert from 'node:assert/strict';

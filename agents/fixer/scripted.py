@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..blast_radius import label
+from ..squawk import label
 from ..common.scripted import SCRIPTED, Done, PlanFn, Policy, Step, called, last, step
 from ..common.scripted import ScriptedModel as _ScriptedModel
 
@@ -36,7 +36,7 @@ def _plan_node_repaired(f: dict[str, Any]) -> list[dict[str, str]]:
 
 def _plan_maintenance_refused(f: dict[str, Any]) -> list[dict[str, str]]:
     return [
-        step("recheck_maintenance", "See what Blast Radius says now that the blockers cleared."),
+        step("recheck_maintenance", "See what Squawk says now that the blockers cleared."),
         step("book_maintenance", "Book it for the requester.", "if the check says allow"),
         step("request_shift_lead_approval", "A warn needs a person's approval.", "if the check says warn"),
         step("keep_waiting", "Still blocked, so queue it again.", "if the check says deny"),
@@ -64,7 +64,7 @@ def _broken_node(f: dict[str, Any], done: Done) -> Step:
         return "take_node_out_of_service", {"hours": 4, "note": f"Hardware repair of {f['node']}."}
     lease = last(done, "take_node_out_of_service")
     if not lease.get("granted"):
-        return "escalate", {"reason": f"Blast Radius refused the lease: {lease.get('reason')}"}
+        return "escalate", {"reason": f"Squawk refused the lease: {lease.get('reason')}"}
     if "dispatch_hardware_tech" not in called(done):
         return "dispatch_hardware_tech", {"note": f"{f['node']} in {f['rack']} is {f['state']}, isolated fault. Out of service until {lease.get('until')}."}
     if f.get("tenant") and "notify_tenant" not in called(done):
@@ -99,7 +99,7 @@ def _maintenance_refused(f: dict[str, Any], done: Done) -> Step:
             return "escalate", {"reason": booked.get("reason", "booking refused")}
         if "notify_requester" not in called(done):
             return "notify_requester", {"message": f"Your {target} maintenance is booked until {booked.get('until')}."}
-        return "finish", {"summary": f"Booked {f['requester']}'s {target} maintenance: Blast Radius allows it now."}
+        return "finish", {"summary": f"Booked {f['requester']}'s {target} maintenance: Squawk allows it now."}
     if check.get("verdict") == "warn":
         if "request_shift_lead_approval" not in called(done):
             return "request_shift_lead_approval", {"summary": f"{target} maintenance for {f['requester']}: {check.get('reason')}"}

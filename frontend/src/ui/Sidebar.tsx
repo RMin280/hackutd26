@@ -95,7 +95,7 @@ export function Sidebar() {
           <button role="radio" aria-checked={mode === 'naive'} className={mode === 'naive' ? 'on' : ''} onClick={() => setMode('naive')}>
             Naive
           </button>
-          <button role="radio" aria-checked={mode === 'blast_radius'} className={mode === 'blast_radius' ? 'on' : ''} onClick={() => setMode('blast_radius')}>
+          <button role="radio" aria-checked={mode === 'squawk'} className={mode === 'squawk' ? 'on' : ''} onClick={() => setMode('squawk')}>
             Squawk
           </button>
         </div>

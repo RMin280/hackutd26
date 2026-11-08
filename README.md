@@ -1,6 +1,6 @@
-# hackutd26: Blast Radius
+# hackutd26: Squawk
 
-Air traffic control for datacenter work: every action is checked before it happens, and when a node in a big job fails, Blast Radius finds the real cause and a safe place to restart. New here? Read `HANDOFF.md`, then `DESIGN.md`.
+Air traffic control for datacenter work: every action is checked before it happens, and when a node in a big job fails, Squawk finds the real cause and a safe place to restart. New here? Read `HANDOFF.md`, then `DESIGN.md`.
 
 ## Run it
 
@@ -28,7 +28,7 @@ The same thing by hand, from the repo root:
 ```bash
 spacetime start                                                   # terminal 1, leave it running
 (cd spacetimedb && npm install)                                   # terminal 2
-spacetime publish --server local --module-path spacetimedb blast-radius
+spacetime publish --server local --module-path spacetimedb squawk
 (cd frontend && npm install && npm run bindings)
 cp frontend/.env.example frontend/.env.local                      # live mode
 (cd frontend && npm run dev)

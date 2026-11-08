@@ -1,4 +1,4 @@
-"""Watches Blast Radius events, triages each one, gives low-criticality issues to the fixer
+"""Watches Squawk events, triages each one, gives low-criticality issues to the fixer
 agent and hands everything else to a person or the scheduler agent.
 
 A refused routine request waits here, with no model calls, until what blocked it clears
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..blast_radius import BlastRadius, Blocker, Event, fmt_time, label
+from ..squawk import Squawk, Blocker, Event, fmt_time, label
 from ..common.loop import MAX_MODEL_CALLS, Model, Outcome
 from ..common.runner import EventRunner
 from .agent import run_fixer
@@ -24,7 +24,7 @@ class Waiting:
 
 
 class FixerRunner(EventRunner):
-    def __init__(self, br: BlastRadius, model: Model, *, actor: str = FIXER, max_model_calls: int = MAX_MODEL_CALLS) -> None:
+    def __init__(self, br: Squawk, model: Model, *, actor: str = FIXER, max_model_calls: int = MAX_MODEL_CALLS) -> None:
         super().__init__(br, actor)
         self.model, self.max_model_calls = model, max_model_calls
         self.waiting: dict[str, Waiting] = {}

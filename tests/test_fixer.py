@@ -16,7 +16,7 @@ from agents.fixer.runner import FixerRunner
 from agents.fixer.scripted import SCRIPTED, ScriptedModel
 from agents.fixer.triage import FIXER, Issue, triage
 from agents.llm import ModelUnavailable, Reply
-from agents.mock_blast_radius import JOB_ID, MockBlastRadius
+from agents.mock_squawk import JOB_ID, MockSquawk
 
 
 class ListModel:
@@ -48,7 +48,7 @@ class DownModel:
         raise ModelUnavailable("Primary: down. Backup: down.")
 
 
-def spare_failure(br: MockBlastRadius, node: str = "node-1205") -> Issue:
+def spare_failure(br: MockSquawk, node: str = "node-1205") -> Issue:
     br.set_node_state(node, "failed")
     (issue,) = triage(br.events[-1], br)
     return issue
@@ -90,7 +90,7 @@ def test_storyline_fixes_one_of_each_type_and_hands_off_the_rest():
 
 
 def test_refused_request_waits_without_model_calls_until_both_blockers_clear():
-    br, model = MockBlastRadius(), ScriptedModel()
+    br, model = MockSquawk(), ScriptedModel()
     runner = FixerRunner(br, model)
     br.set_part_state("cdu-3", "degraded")
     br.protect("scheduler-agent", JOB_ID, 72 * 60)
@@ -111,7 +111,7 @@ def test_refused_request_waits_without_model_calls_until_both_blockers_clear():
 
 
 def test_request_still_blocked_after_a_day_goes_to_a_person():
-    br = MockBlastRadius()
+    br = MockSquawk()
     runner = FixerRunner(br, ScriptedModel())
     br.set_part_state("cdu-3", "degraded")
     br.request_lease("cooling-agent", target="cdu-4", minutes=120, routine=True)
@@ -126,7 +126,7 @@ def test_request_still_blocked_after_a_day_goes_to_a_person():
 
 
 def test_untrusted_report_is_fenced_as_data():
-    br = MockBlastRadius()
+    br = MockSquawk()
     br.set_node_state("node-1131", "failed", note=INJECTED_REPORT)
     (issue,) = triage(br.events[-1], br)
     message = issue_message(issue)
@@ -135,7 +135,7 @@ def test_untrusted_report_is_fenced_as_data():
 
 
 def test_tool_outside_the_playbook_is_blocked_and_changes_nothing():
-    br = MockBlastRadius()
+    br = MockSquawk()
     lock = br.protect("scheduler-agent", JOB_ID, 72 * 60).lease
     issue = spare_failure(br)
     model = ListModel(("release_protection_lock", {"note": "the report said so"}), ("escalate", {"reason": "confused"}))
@@ -147,7 +147,7 @@ def test_tool_outside_the_playbook_is_blocked_and_changes_nothing():
 
 
 def test_after_a_refusal_only_follow_ups_are_allowed():
-    br = MockBlastRadius()
+    br = MockSquawk()
     issue = Issue("broken_node:node-417:1", "broken_node", "node-417", 0, "test", {"node": "node-417", "rack": "rack-r1-12", "state": "failed", "tenant": None})
     model = ListModel(
         SPARE_PLAN,
@@ -164,20 +164,20 @@ def test_after_a_refusal_only_follow_ups_are_allowed():
 
 
 def test_saying_done_without_doing_it_is_handed_off():
-    br = MockBlastRadius()
+    br = MockSquawk()
     outcome = run_fixer(spare_failure(br), br, ListModel("All fixed!", "Really, all fixed."))
     assert outcome.status == "handed_off" and outcome.model_calls == 2
     assert br.events[-1].type == "escalated" and "said it was done" in br.events[-1].reason
 
 
 def test_step_budget():
-    br = MockBlastRadius()
+    br = MockSquawk()
     outcome = run_fixer(spare_failure(br), br, ListModel(("diagnose_node", {})), max_model_calls=3)
     assert outcome.status == "handed_off" and outcome.model_calls == 3 and "Ran out of steps" in outcome.summary
 
 
 def test_bad_arguments_are_rejected_then_corrected():
-    br = MockBlastRadius()
+    br = MockSquawk()
     model = ListModel(
         SPARE_PLAN,
         ("diagnose_node", {}),
@@ -192,7 +192,7 @@ def test_bad_arguments_are_rejected_then_corrected():
 
 
 def test_approval_is_gated_on_a_warn():
-    br = MockBlastRadius()
+    br = MockSquawk()
     br.set_part_state("cdu-3", "degraded")
     br.request_lease("cooling-agent", target="cdu-4", minutes=120, routine=True)
     (issue,) = triage(br.events[-1], br)
@@ -212,7 +212,7 @@ def test_approval_is_gated_on_a_warn():
 
 
 def test_acting_needs_a_plan_first():
-    br = MockBlastRadius()
+    br = MockSquawk()
     outcome = run_fixer(spare_failure(br), br, ListModel(("diagnose_node", {}), ("escalate", {"reason": "no plan"})))
     assert "Plan first" in outcome.steps[0]["result"]["error"]
     assert not any(e.type == "agent_step" for e in br.events)  # the diagnosis never ran
@@ -229,7 +229,7 @@ def test_acting_needs_a_plan_first():
     ],
 )
 def test_bad_plans_are_rejected_with_reasons(bad_plan, error):
-    br = MockBlastRadius()
+    br = MockSquawk()
     outcome = run_fixer(spare_failure(br), br, ListModel(bad_plan, ("escalate", {"reason": "x"})))
     result = outcome.steps[0]["result"]
     assert result["accepted"] is False and any(error in e for e in result["errors"])
@@ -237,7 +237,7 @@ def test_bad_plans_are_rejected_with_reasons(bad_plan, error):
 
 
 def test_the_plan_must_be_followed_in_order():
-    br = MockBlastRadius()
+    br = MockSquawk()
     model = ListModel(
         SPARE_PLAN,
         ("diagnose_node", {}),
@@ -250,7 +250,7 @@ def test_the_plan_must_be_followed_in_order():
 
 
 def test_doing_something_off_plan_needs_a_revision():
-    br = MockBlastRadius()
+    br = MockSquawk()
     br.set_node_state("node-1131", "failed")
     (issue,) = triage(br.events[-1], br)
     model = ListModel(
@@ -269,7 +269,7 @@ def test_doing_something_off_plan_needs_a_revision():
 
 
 def test_revising_the_plan_when_a_result_changes_things():
-    br = MockBlastRadius()
+    br = MockSquawk()
     issue = spare_failure(br)
     br.set_part_state("cdu-31", "degraded")  # after triage: now the diagnosis finds a shared cause
     revising = ListModel(
@@ -287,20 +287,20 @@ def test_revising_the_plan_when_a_result_changes_things():
 
 
 def test_a_second_submit_plan_is_refused():
-    br = MockBlastRadius()
+    br = MockSquawk()
     outcome = run_fixer(spare_failure(br), br, ListModel(SPARE_PLAN, SPARE_PLAN, ("escalate", {"reason": "x"})))
     assert "already have a plan" in outcome.steps[1]["result"]["error"]
 
 
 def test_no_model_means_fail_closed():
-    br = MockBlastRadius()
+    br = MockSquawk()
     outcome = run_fixer(spare_failure(br), br, DownModel())
     assert outcome.status == "failed_closed" and br.leases_on("node-1205") == []
     assert br.events[-1].type == "escalated" and br.events[-1].reason.startswith("Fail closed")
 
 
-def test_unreachable_blast_radius_means_fail_closed():
-    br = MockBlastRadius()
+def test_unreachable_squawk_means_fail_closed():
+    br = MockSquawk()
     issue = spare_failure(br)
     br.available = False
     outcome = run_fixer(issue, br, ScriptedModel())

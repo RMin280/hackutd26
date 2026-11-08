@@ -1,4 +1,4 @@
-"""The event loop every agent shares: read new Blast Radius events from a cursor and hand
+"""The event loop every agent shares: read new Squawk events from a cursor and hand
 each one to the agent's handle(). Agents never talk to each other; they react to each
 other's events, so settle() keeps draining until no runner sees anything new.
 """
@@ -7,12 +7,12 @@ from __future__ import annotations
 
 from typing import Any, Sequence
 
-from ..blast_radius import BlastRadius, BlastRadiusUnavailable, Event
+from ..squawk import Squawk, SquawkUnavailable, Event
 from .loop import Outcome
 
 
 class EventRunner:
-    def __init__(self, br: BlastRadius, actor: str) -> None:
+    def __init__(self, br: Squawk, actor: str) -> None:
         self.br, self.actor = br, actor
         self.cursor = 0  # last event handled
         self.outcomes: list[Outcome] = []
@@ -44,7 +44,7 @@ class EventRunner:
     def record(self, subject: str, reason: str, **data: Any) -> None:
         try:
             self.br.record(self.actor, "agent", subject, reason, **data)
-        except BlastRadiusUnavailable:
+        except SquawkUnavailable:
             pass  # failing closed: the outcome still reaches the caller
 
 

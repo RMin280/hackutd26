@@ -1,4 +1,4 @@
-"""In-process stand-in for Blast Radius over the simulated demo hall (DESIGN.md §3.4).
+"""In-process stand-in for Squawk over the simulated demo hall (DESIGN.md §3.4).
 
 It lets the agents run end to end before the teammate's SpacetimeDB module exists, the
 way frontend/src/mock stands in for the UI. Same IDs and rules as that mock, plus what
@@ -21,8 +21,8 @@ import itertools
 from dataclasses import asdict, dataclass, replace
 from typing import Any, NamedTuple
 
-from .blast_radius import (
-    BlastRadiusUnavailable,
+from .squawk import (
+    SquawkUnavailable,
     Blocker,
     Check,
     Decision,
@@ -235,7 +235,7 @@ class Margin(NamedTuple):
 # --- The stand-in ----------------------------------------------------------------------
 
 
-class MockBlastRadius:
+class MockSquawk:
     def __init__(self, actors: tuple[Actor, ...] = DEMO_ACTORS) -> None:
         self.site = build_site()
         self.actors = {a.name: a for a in actors}
@@ -551,7 +551,7 @@ class MockBlastRadius:
         return Decision(True, reason)
 
     def record_test(self, actor: str, feature_id: str, passed: bool, detail: str, service_says: str = "up") -> FeatureView:
-        """Our own test of a feature. Blast Radius sets the feature's state from the result
+        """Our own test of a feature. Squawk sets the feature's state from the result
         (never the agent) and writes an event whenever the state changes."""
         entry, a = self._enter(actor, "record_test", perm="record_tests", feature=feature_id, passed=passed)
         seen = self.features_seen[feature_id]
@@ -636,7 +636,7 @@ class MockBlastRadius:
 
     def _up(self) -> None:
         if not self.available:
-            raise BlastRadiusUnavailable("Blast Radius is unreachable.")
+            raise SquawkUnavailable("Squawk is unreachable.")
 
     def _enter(self, actor_name: str, call: str, *, perm: str | None = None, target: str | None = None, **args: Any):
         """Audit the call, then check the caller's identity, role and rows before any work."""

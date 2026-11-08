@@ -29,7 +29,7 @@ def _plan_cooling(f: dict[str, Any]) -> list[dict[str, str]]:
         step("list_racks_without_confirmed_backup", "The shift lead needs to know which racks are blind."),
         step("list_leases_on_stale_data", "Approvals made on stale readings may not hold."),
         step("dispatch_controls_engineer", "Someone has to fix the gateway."),
-        step("escalate", "Blast Radius can't see part of the hall; a person owns this."),
+        step("escalate", "Squawk can't see part of the hall; a person owns this."),
     ]
 
 
@@ -103,9 +103,9 @@ def _revocation(f: dict[str, Any], done: Done) -> Step:
     if "page_security_owner" not in called(done):
         return "page_security_owner", {
             "message": f"The revoked-key list hasn't updated since {f['last_good_test']}. {changes['count']} facility change(s) since then need a review. "
-            "Blast Radius is failing closed until it's current."
+            "Squawk is failing closed until it's current."
         }
-    return "escalate", {"reason": f"Revoked-key list stale since {f['last_good_test']}: security owner paged, {changes['count']} change(s) to review, Blast Radius failing closed."}
+    return "escalate", {"reason": f"Revoked-key list stale since {f['last_good_test']}: security owner paged, {changes['count']} change(s) to review, Squawk failing closed."}
 
 
 def _recovered(f: dict[str, Any], done: Done) -> Step:

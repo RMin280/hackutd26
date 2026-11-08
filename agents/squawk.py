@@ -1,10 +1,10 @@
-"""What the agents need from Blast Radius: read, check and act calls behind one interface.
+"""What the agents need from Squawk: read, check and act calls behind one interface.
 
-Two implementations: MockBlastRadius (agents/mock_blast_radius.py, the simulated demo
+Two implementations: MockSquawk (agents/mock_squawk.py, the simulated demo
 hall, in-process) today, and the teammate's SpacetimeDB module (over its HTTP API) later.
 agents/README.md maps every call to the tables and reducers that module needs.
 
-Blast Radius decides every verdict. Callers pass their actor name; the backend checks
+Squawk decides every verdict. Callers pass their actor name; the backend checks
 that actor's role and rows before doing anything and writes every action to the audit
 log (CLAUDE.md security rules). Time is simulated minutes since T+0.
 """
@@ -19,8 +19,8 @@ PartState = Literal["ok", "degraded", "failed", "maintenance"]
 Verdict = Literal["allow", "warn", "deny"]
 
 
-class BlastRadiusUnavailable(RuntimeError):
-    """Blast Radius can't be reached. Agents fail closed: they act on nothing."""
+class SquawkUnavailable(RuntimeError):
+    """Squawk can't be reached. Agents fail closed: they act on nothing."""
 
 
 class OutOfScope(PermissionError):
@@ -164,7 +164,7 @@ class Event:
     data: dict[str, Any] = field(default_factory=dict)
 
 
-class BlastRadius(Protocol):
+class Squawk(Protocol):
     @property
     def now(self) -> int: ...
 

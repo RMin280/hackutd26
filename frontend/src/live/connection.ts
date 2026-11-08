@@ -1,4 +1,4 @@
-// Live data source. Connects to the Blast Radius SpacetimeDB module, keeps the store's
+// Live data source. Connects to the Squawk SpacetimeDB module, keeps the store's
 // site / world / events / caption in sync with its tables, and turns the presenter's
 // controls (Space, R, 1/2, step clicks) into reducer calls. main.tsx starts it only when
 // live mode is on; otherwise the mock in src/mock drives the view as before.
@@ -62,7 +62,7 @@ interface LiveBuilder {
 const connectionBuilder = () => (DbConnection as unknown as { builder(): LiveBuilder }).builder();
 type AppState = ReturnType<typeof useStore.getState>;
 
-const TOKEN_KEY = `blast-radius:${LIVE_URI}:${LIVE_DB}:token`;
+const TOKEN_KEY = `squawk:${LIVE_URI}:${LIVE_DB}:token`;
 const readToken = () => {
   try {
     return localStorage.getItem(TOKEN_KEY) ?? undefined;
@@ -152,7 +152,7 @@ function call(name: string, args: object, quiet = false): void {
     .then(() => fn(args))
     .catch((e: unknown) => {
       if (quiet) return;
-      console.warn(`[blast-radius] ${name} failed`, e);
+      console.warn(`[squawk] ${name} failed`, e);
       useStore.setState({ caption: `The backend refused ${name}: ${messageOf(e)}`, playing: false });
     });
 }
@@ -191,7 +191,7 @@ function attach(c: LiveConnection): void {
   for (const name of TABLES) {
     const table = c.db[name];
     if (!table) {
-      console.warn(`[blast-radius] table "${name}" is missing from the bindings: run npm run bindings`);
+      console.warn(`[squawk] table "${name}" is missing from the bindings: run npm run bindings`);
       continue;
     }
     const topology = TOPOLOGY.has(name);
@@ -205,7 +205,7 @@ function attach(c: LiveConnection): void {
   c.subscriptionBuilder()
     .onApplied(() => schedule(true))
     .onError((...args: unknown[]) => {
-      console.error('[blast-radius] subscription failed', ...args);
+      console.error('[squawk] subscription failed', ...args);
       useStore.setState({ caption: 'Subscribing to SpacetimeDB failed; see the browser console.' });
     })
     .subscribe(TABLES.map((name) => `SELECT * FROM ${name}`));

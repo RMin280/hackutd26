@@ -1,4 +1,4 @@
-// Blast Radius backend: a SpacetimeDB module (TypeScript, SpacetimeDB 2.x).
+// Squawk backend: a SpacetimeDB module (TypeScript, SpacetimeDB 2.x).
 //
 // Tables hold the facility map (parts, hot aisles, racks, nodes), the live state the
 // control-room view renders (margin, job, work, claim, decision) and the private
@@ -203,7 +203,7 @@ const decision = table(
     seq: t.u64().primaryKey().autoInc(),
     atMin: t.u32(),
     actor: t.string(),
-    actorKind: t.string(), // facility | scheduler | cooling | blast_radius
+    actorKind: t.string(), // facility | scheduler | cooling | squawk
     actorRole: t.string(),
     title: t.string(),
     verdict: t.string(), // allow | warn | deny | failure | shared_cause | isolated | placement | info
@@ -227,7 +227,7 @@ const scenarioTable = table(
   { public: true },
   {
     id: t.u32().primaryKey(), // single row, id 0
-    mode: t.string(), // naive | blast_radius
+    mode: t.string(), // naive | squawk
     bed: t.string(), // demo | lab (diagnostics test bed) | scale
     step: t.i32(), // -1 = ready
     total: t.u32(),
@@ -490,7 +490,7 @@ export const resetDemo = spacetimedb.reducer((ctx) => run(ctx, (s, me) => scenar
 /** Diagnostics test bed: the hall with five known incidents (shift lead or admin). */
 export const seedDiagnostics = spacetimedb.reducer((ctx) => run(ctx, (s, me) => lab.seedDiagnostics(s, me)));
 
-// The presenter's scenario (DESIGN.md §10.2). mode: naive | blast_radius.
+// The presenter's scenario (DESIGN.md §10.2). mode: naive | squawk.
 export const scenarioStart = spacetimedb.reducer({ mode: t.string() }, (ctx, { mode }) =>
   run(ctx, (s, me) => scenario.scenarioStart(s, me, mode)),
 );
@@ -507,7 +507,7 @@ export const scenarioGoto = spacetimedb.reducer({ mode: t.string(), step: t.u32(
 export const seedScaleSite = spacetimedb.reducer({ gpus: t.u32() }, (ctx, { gpus }) =>
   run(ctx, (s, me) => {
     cmd.seedScaleSite(s, me, gpus);
-    scenario.setReady(s, 'blast_radius', 'scale', `Scale site with about ${gpus} GPUs. The 3D view only draws the demo hall.`);
+    scenario.setReady(s, 'squawk', 'scale', `Scale site with about ${gpus} GPUs. The 3D view only draws the demo hall.`);
   }),
 );
 

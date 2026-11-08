@@ -38,7 +38,7 @@ import {
 
 export const DEFAULT_SETTINGS = { id: 0, openRegistration: true, failureWindowMin: 120 };
 export const DEFAULT_PROTECTION_MIN = 72 * 60;
-const BLAST_RADIUS = { actor: 'Blast Radius', actorKind: 'blast_radius', actorRole: 'system' };
+const SQUAWK = { actor: 'Squawk', actorKind: 'squawk', actorRole: 'system' };
 
 // ---------------------------------------------------------------- helpers
 
@@ -114,7 +114,7 @@ export function seedScaleSite(s: Store, identity: string, gpus: number): void {
   const site = buildSite(scaleSpec(gpus));
   seed(s, site);
   decide(s, {
-    ...BLAST_RADIUS,
+    ...SQUAWK,
     title: `Scale site: ${fmtInt(gpus)} GPUs`,
     verdict: 'info',
     reason: `${fmtInt(site.racks.length)} racks, ${fmtInt(site.nodes.length)} nodes, ${fmtInt(site.parts.length)} facility parts.`,
@@ -473,7 +473,7 @@ export function advanceTo(s: Store, now: number): void {
     if (w.endMin > now) continue;
     finish(s, w, 'done');
     decide(s, {
-      ...BLAST_RADIUS,
+      ...SQUAWK,
       title: w.kind === 'protection' ? `Protection for ${w.job} ended` : `${describeWork(w)} finished`,
       verdict: 'info',
       reason: w.kind === 'protection' ? `Its ${plural(w.racks.length, 'rack')} are open for maintenance again.` : 'Window ended; its claims are released.',
@@ -489,7 +489,7 @@ export function advanceTo(s: Store, now: number): void {
     }
     activate(s, w);
     decide(s, {
-      ...BLAST_RADIUS,
+      ...SQUAWK,
       title: `${describeWork(w)} started`,
       verdict: 'info',
       reason: `Runs until ${clock(w.endMin)}.`,
@@ -604,7 +604,7 @@ export function diagnoseFailure(s: Store, identity: string, nodes: string[]): bi
   const d = diagnose(s, nodes, s.now(), s.settings().failureWindowMin);
   const row = s.insertDiagnosis({ atMin: s.now(), nodes, ...d });
   decide(s, {
-    ...BLAST_RADIUS,
+    ...SQUAWK,
     title: `Diagnosis: ${d.classification === 'shared_cause' ? `shared cause ${label(d.cause)}` : 'isolated'}`,
     verdict: d.classification,
     reason: `${d.reason} Send a ${d.send}.`,
@@ -652,7 +652,7 @@ export function requestPlacement(s: Store, identity: string, args: PlacementArgs
     used: false,
   });
   decide(s, {
-    ...BLAST_RADIUS,
+    ...SQUAWK,
     title: p.shortfall ? `Safe placement: shortfall of ${p.shortfall}` : `Safe placement: ${p.nodes.length} nodes`,
     verdict: 'placement',
     reason: p.reason,
@@ -701,7 +701,7 @@ export function restartJob(s: Store, identity: string, jobId: string, placementI
   audit(s, a, 'restart_job', jobId, 'ok', `placement #${placementId}`);
 }
 
-/** What a scheduler does without Blast Radius: swap the failed node for the nearest free
+/** What a scheduler does without Squawk: swap the failed node for the nearest free
  *  node (same leaf if possible) and restart, with no diagnosis and no safety check. The
  *  naive half of the demo; real agents should use diagnose_failure + safe_placement. */
 export function naiveRestart(

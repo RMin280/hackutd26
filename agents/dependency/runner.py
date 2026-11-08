@@ -1,4 +1,4 @@
-"""Runs the scheduled feature tests, records each result in Blast Radius (which sets the
+"""Runs the scheduled feature tests, records each result in Squawk (which sets the
 feature's state), and hands the issues those changes cause to the dependency agent or a
 person.
 
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..blast_radius import BlastRadius, Event
+from ..squawk import Squawk, Event
 from ..common.loop import MAX_MODEL_CALLS, Model, Outcome
 from ..common.runner import EventRunner
 from ..mock_services import TEST_INTERVAL
@@ -21,7 +21,7 @@ from .triage import DEPENDENCY, Handoff, Issue, triage
 class DependencyRunner(EventRunner):
     def __init__(
         self,
-        br: BlastRadius,
+        br: Squawk,
         model: Model,
         prober: Any,
         *,

@@ -1,9 +1,9 @@
-"""One decision-feed line per Blast Radius event, for the terminal storylines. The
+"""One decision-feed line per Squawk event, for the terminal storylines. The
 frontend renders the same events its own way (MERGE.md §4)."""
 
 from __future__ import annotations
 
-from ..blast_radius import Event, fmt_time, label
+from ..squawk import Event, fmt_time, label
 
 
 def describe(e: Event) -> str:

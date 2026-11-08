@@ -107,7 +107,7 @@ The computing scales because every question touches only one branch of a shallow
 
 ## Naming
 
-**Squawk**, everywhere: the screen, the docs, the pitch, the database name, code identifiers and the agents' prompts. The rename of the code is part of the branch merge (`HANDOFF.md` §8 step 2 lists every identifier); until it lands, some files still carry the old name. Don't add new uses of it.
+**Squawk**, everywhere: the screen, the docs, the pitch, the database name, code identifiers and the agents' prompts. The code was renamed on the `integration` branch (`HANDOFF.md` §8 step 2). Don't add new uses of the old name.
 
 ## Repo layout (after the merge)
 

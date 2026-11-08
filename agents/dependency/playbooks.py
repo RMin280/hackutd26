@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any
 
-from ..blast_radius import fmt_time, label
+from ..squawk import fmt_time, label
 from ..common.playbook import COMMON_TOOLS, Playbook, Run, Tool, events_by, text_param
 
 EXAMPLES = 8  # rows a list tool shows; the count covers the rest
@@ -117,7 +117,7 @@ TOOLS: dict[str, Tool] = {
         for t in (
             Tool(
                 "retest_feature",
-                "Run our test of this feature again and record the result. Blast Radius sets the feature's state from it.",
+                "Run our test of this feature again and record the result. Squawk sets the feature's state from it.",
                 _retest_feature,
             ),
             Tool(
@@ -221,7 +221,7 @@ def _verify_recovered(run: Run) -> str | None:
 PLAYBOOKS: dict[str, Playbook] = {
     "paging_degraded": Playbook(
         "paging_degraded",
-        "Text paging says it's up, but our test page by text wasn't delivered. Blast Radius already sends new pages by email.\n"
+        "Text paging says it's up, but our test page by text wasn't delivered. Squawk already sends new pages by email.\n"
         "Done means: every page sent by text since the last good test has been re-sent by email, and the shift lead knows "
         "which pages may have been missed. Retest first; if text paging passes the retest, tell the shift lead it was a "
         "one-off and finish.",
@@ -232,7 +232,7 @@ PLAYBOOKS: dict[str, Playbook] = {
     ),
     "cooling_readings_stale": Playbook(
         "cooling_readings_stale",
-        "One building management gateway's readings are stale while the system says it's up, so Blast Radius treats that "
+        "One building management gateway's readings are stale while the system says it's up, so Squawk treats that "
         "gateway's CDUs as unknown, and racks that rely on them can't confirm their backup. You can't fix the gateway.\n"
         "Done means: a retest confirms it, you've gathered the racks without confirmed backup and any leases granted on "
         "stale readings, a controls engineer is on the way, and you've handed it to the shift lead with those facts "
@@ -245,7 +245,7 @@ PLAYBOOKS: dict[str, Playbook] = {
     "revocation_stale": Playbook(
         "revocation_stale",
         "The key service says it's up, but its revoked-key list hasn't updated in time, so a revoked key might still work. "
-        "Blast Radius is already failing closed: facility changes need a shift lead until the list is current.\n"
+        "Squawk is already failing closed: facility changes need a shift lead until the list is current.\n"
         "Done means: a retest confirms it, you've listed the facility changes made since the last good update, the "
         "security owner has been paged, and you've handed it to the shift lead (escalate). If the retest passes, finish instead.",
         ("retest_feature", "list_changes_since_last_sync", "page_security_owner", "escalate", "finish"),

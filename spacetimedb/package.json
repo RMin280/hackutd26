@@ -1,9 +1,9 @@
 {
-  "name": "blast-radius-spacetimedb",
+  "name": "squawk-spacetimedb",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Blast Radius backend: SpacetimeDB module (tables + reducers) with the safety interlock, diagnosis and placement logic",
+  "description": "Squawk backend: SpacetimeDB module (tables + reducers) with the safety interlock, diagnosis and placement logic",
   "scripts": {
     "test": "tsx --test test/*.test.ts",
     "test:scale": "tsx --test test/scale/scale.test.ts",

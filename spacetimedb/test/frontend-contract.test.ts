@@ -44,7 +44,7 @@ test('the backend builds the same hall the view draws', () => {
   assert.deepEqual(toSite(tablesOf(s)), buildMockSite());
 });
 
-for (const mode of ['naive', 'blast_radius'] as const) {
+for (const mode of ['naive', 'squawk'] as const) {
   test(`${mode}: every step matches the view's mock engine`, () => {
     const s = demo();
     ensureScriptedActors(s);

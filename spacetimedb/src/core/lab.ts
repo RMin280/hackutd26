@@ -114,7 +114,7 @@ export function buildLab(s: Store): void {
   }
   advanceTo(s, LAB_NOW);
   for (const inc of INCIDENTS) s.putIncident({ ...inc });
-  setReady(s, 'blast_radius', 'lab', LAB_CAPTION);
+  setReady(s, 'squawk', 'lab', LAB_CAPTION);
 }
 
 /** Reseeds the test bed (shift lead or admin). */

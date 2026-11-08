@@ -7,7 +7,7 @@ the parts it reports on: one issue per feature, however many parts it covers.
 
 from __future__ import annotations
 
-from ..blast_radius import BlastRadius, Event, FeatureView, fmt_time, label
+from ..squawk import Squawk, Event, FeatureView, fmt_time, label
 from ..common.issues import Handoff, Issue, Triaged
 
 DEPENDENCY = "dependency-agent"
@@ -15,7 +15,7 @@ FLAP_WINDOW = 30  # a feature failing again this soon after recovering goes to a
 KINDS = ("paging_degraded", "cooling_readings_stale", "revocation_stale", "dependency_recovered")
 
 
-def triage(event: Event, br: BlastRadius, actor: str = DEPENDENCY) -> list[Triaged]:
+def triage(event: Event, br: Squawk, actor: str = DEPENDENCY) -> list[Triaged]:
     if event.type != "feature_state":
         return []
     f = br.feature(event.subject)
@@ -35,7 +35,7 @@ def triage(event: Event, br: BlastRadius, actor: str = DEPENDENCY) -> list[Triag
     return []
 
 
-def _degraded(event: Event, f: FeatureView, br: BlastRadius) -> list[Triaged]:
+def _degraded(event: Event, f: FeatureView, br: Squawk) -> list[Triaged]:
     if f.recovered_at is not None and event.time - f.recovered_at < FLAP_WINDOW:
         return [Handoff(f.id, "shift lead", f"Not for the agent: {f.name} failed again {event.time - f.recovered_at} min after recovering, so it's flapping. {event.reason}")]
     facts = _facts(f, event)
@@ -50,7 +50,7 @@ def _degraded(event: Event, f: FeatureView, br: BlastRadius) -> list[Triaged]:
                 subject=f.id,
                 opened_at=event.time,
                 reason=f"{f.name} is failing while the paging service says it's {f.service_says}. Email paging works, so pages sent by text since the last good test can be re-sent.",
-                facts={**facts, "fallback": "email paging works; Blast Radius already sends new pages by email"},
+                facts={**facts, "fallback": "email paging works; Squawk already sends new pages by email"},
             )
         ]
     if f.id == "paging.email":
@@ -66,7 +66,7 @@ def _degraded(event: Event, f: FeatureView, br: BlastRadius) -> list[Triaged]:
                 subject=f.id,
                 opened_at=event.time,
                 reason=(
-                    f"{f.name} went stale while the building management system says it's {f.service_says}. Blast Radius now treats "
+                    f"{f.name} went stale while the building management system says it's {f.service_says}. Squawk now treats "
                     f"{label(f.covers[0])} to {label(f.covers[-1])} as unknown, so {len(blind)} racks can't confirm their backup. "
                     "The agent gathers the facts and hands it to the shift lead."
                 ),
@@ -89,7 +89,7 @@ def _degraded(event: Event, f: FeatureView, br: BlastRadius) -> list[Triaged]:
                 opened_at=event.time,
                 reason=(
                     f"The key service says it's {f.service_says}, but its revoked-key list is out of date, so a revoked key might still work. "
-                    "Blast Radius is failing closed: facility changes need a shift lead until it's current. Security always goes to a person."
+                    "Squawk is failing closed: facility changes need a shift lead until it's current. Security always goes to a person."
                 ),
                 facts=facts,
             )

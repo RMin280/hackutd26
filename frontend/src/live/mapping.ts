@@ -152,7 +152,7 @@ const byOrd = <T extends { ord: number }>(a: T, b: T) => a.ord - b.ord;
 const byId = <T extends { id: bigint }>(a: T, b: T) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 const newest = <T extends { id: bigint }>(rows: T[]): T | undefined => rows.reduce<T | undefined>((m, r) => (!m || r.id > m.id ? r : m), undefined);
 
-const ACTOR_KINDS: ActorKind[] = ['facility', 'scheduler', 'cooling', 'blast_radius'];
+const ACTOR_KINDS: ActorKind[] = ['facility', 'scheduler', 'cooling', 'squawk'];
 const VERDICTS: Verdict[] = ['allow', 'warn', 'deny', 'failure', 'shared_cause', 'isolated', 'placement', 'info'];
 
 /** The facility map. Rebuild only when parts, racks, nodes or downstream rows are added or removed. */
@@ -306,7 +306,7 @@ export function toEvents(rows: DecisionRow[]): DecisionEvent[] {
 }
 
 export interface ScenarioView {
-  mode: 'naive' | 'blast_radius';
+  mode: 'naive' | 'squawk';
   bed: string;
   stepIndex: number;
   total: number;
@@ -317,7 +317,7 @@ export interface ScenarioView {
 
 export function toScenario(row: ScenarioRow | undefined): ScenarioView {
   return {
-    mode: row?.mode === 'naive' ? 'naive' : 'blast_radius',
+    mode: row?.mode === 'naive' ? 'naive' : 'squawk',
     bed: row?.bed ?? 'demo',
     stepIndex: row?.step ?? -1,
     total: row?.total ?? 0,

@@ -1,11 +1,11 @@
-"""The services Blast Radius and the agents rely on, for the simulated hall: what each one
+"""The services Squawk and the agents rely on, for the simulated hall: what each one
 depends on, the features we use, and how we test each feature from our side
 (agents/DEPENDENCY_AGENT.md).
 
-SERVICES and FEATURES are part of the map Blast Radius keeps, like a rack's feed
+SERVICES and FEATURES are part of the map Squawk keeps, like a rack's feed
 chains. SimulatedServices is the outside world: each dependency's true state, which the
 services never report (their own health check always says "up"). Only our tests reveal
-it, and Blast Radius only knows what those tests recorded.
+it, and Squawk only knows what those tests recorded.
 """
 
 from __future__ import annotations
@@ -57,12 +57,12 @@ FEATURES: dict[str, Feature] = {
                 f"CDU readings through gateway {g}",
                 (f"fieldbus-{g}",),
                 "reading_age",
-                ("Blast Radius backup margins",),
+                ("Squawk backup margins",),
                 tuple(f"cdu-{c}" for c in range((g - 1) * CDUS_PER_GATEWAY + 1, g * CDUS_PER_GATEWAY + 1)),
             )
             for g in range(1, 5)
         ),
-        Feature("keys.revocation", "keys", "Refusing revoked keys", ("revocation-feed",), "list_age", ("every Blast Radius call",)),
+        Feature("keys.revocation", "keys", "Refusing revoked keys", ("revocation-feed",), "list_age", ("every Squawk call",)),
     )
 }
 

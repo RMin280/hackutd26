@@ -13,7 +13,7 @@ import {
 } from './engine';
 import { JOB_ID, JOB_SIZE, initialOwners, label } from './site';
 
-export type Mode = 'naive' | 'blast_radius';
+export type Mode = 'naive' | 'squawk';
 
 export interface StepResult {
   caption: string;
@@ -192,7 +192,7 @@ const naive: Step[] = [
   },
 ];
 
-const blastRadius: Step[] = [
+const squawk: Step[] = [
   ...shared,
   {
     at: 11,
@@ -202,7 +202,7 @@ const blastRadius: Step[] = [
       ctx.world.diagnosis = d;
       ctx.emit({
         actor: 'Squawk',
-        actorKind: 'blast_radius',
+        actorKind: 'squawk',
         title: `Diagnosis: ${d.classification === 'shared_cause' ? `shared cause ${label(d.cause!)}` : 'isolated'}`,
         verdict: d.classification,
         reason: `${d.reason} Send a ${d.send}.`,
@@ -225,7 +225,7 @@ const blastRadius: Step[] = [
       const racks = [...new Set(p.nodes.map((n) => ctx.site.nodes[n].rack))];
       ctx.emit({
         actor: 'Squawk',
-        actorKind: 'blast_radius',
+        actorKind: 'squawk',
         title: `Safe placement: ${p.nodes.length} nodes`,
         verdict: 'placement',
         reason: p.reason,
@@ -310,4 +310,4 @@ const blastRadius: Step[] = [
   },
 ];
 
-export const SCENARIOS: Record<Mode, Step[]> = { naive, blast_radius: blastRadius };
+export const SCENARIOS: Record<Mode, Step[]> = { naive, squawk: squawk };

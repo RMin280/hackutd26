@@ -2,13 +2,13 @@
 its own, which go to a person (or the scheduler agent), and which need nothing.
 
 The model never decides this. Low means every rack keeps full backup, nothing in a
-running job is touched, and (checked again per action) Blast Radius allows every action.
+running job is touched, and (checked again per action) Squawk allows every action.
 Reads here touch only the event's own node, rack, part or job: no facility-wide scans.
 """
 
 from __future__ import annotations
 
-from ..blast_radius import BlastRadius, Blocker, Event, fmt_time, label
+from ..squawk import Squawk, Blocker, Event, fmt_time, label
 from ..common.issues import Handoff, Issue, Triaged
 
 __all__ = ["FIXER", "KINDS", "Handoff", "Issue", "Triaged", "triage"]
@@ -20,7 +20,7 @@ REQUEUE_DEADLINE = 24 * 60  # a re-queued routine request gives up after this lo
 KINDS = ("broken_node", "node_repaired", "maintenance_refused", "stale_protection")
 
 
-def triage(event: Event, br: BlastRadius, fixer: str = FIXER) -> list[Triaged]:
+def triage(event: Event, br: Squawk, fixer: str = FIXER) -> list[Triaged]:
     if event.actor == fixer:
         return []  # never react to our own actions
     if event.type == "state_change" and event.data.get("kind") == "node":
@@ -34,7 +34,7 @@ def triage(event: Event, br: BlastRadius, fixer: str = FIXER) -> list[Triaged]:
     return []
 
 
-def _node_change(event: Event, br: BlastRadius, fixer: str) -> list[Triaged]:
+def _node_change(event: Event, br: Squawk, fixer: str) -> list[Triaged]:
     node = br.node(event.subject)
     state = event.data.get("state")
 
@@ -104,7 +104,7 @@ def _node_change(event: Event, br: BlastRadius, fixer: str) -> list[Triaged]:
     return []
 
 
-def _part_change(event: Event, br: BlastRadius) -> list[Triaged]:
+def _part_change(event: Event, br: Squawk) -> list[Triaged]:
     state = event.data.get("state")
     if state not in ("degraded", "failed"):
         return []
@@ -144,7 +144,7 @@ def _lease_denied(event: Event) -> list[Triaged]:
     ]
 
 
-def _job_finished(event: Event, br: BlastRadius) -> list[Triaged]:
+def _job_finished(event: Event, br: Squawk) -> list[Triaged]:
     job = br.job(event.subject)
     return [
         Issue(

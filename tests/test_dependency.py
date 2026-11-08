@@ -1,5 +1,5 @@
 """The dependency agent: services that say they're up while a feature we use is broken.
-Our tests from our side, what Blast Radius does with their results, triage, and the
+Our tests from our side, what Squawk does with their results, triage, and the
 storyline with the fixer running alongside."""
 
 from __future__ import annotations
@@ -11,25 +11,25 @@ from agents.dependency.agent import run_dependency
 from agents.dependency.demo import run_demo
 from agents.dependency.scripted import ScriptedModel
 from agents.dependency.triage import triage
-from agents.mock_blast_radius import JOB_ID, MockBlastRadius
+from agents.mock_squawk import JOB_ID, MockSquawk
 from agents.mock_services import FEATURES, SimulatedServices
 
 DEP, FIXER = "dependency-agent", "fixer-agent"
 
 
-def run_tests(br: MockBlastRadius, world: SimulatedServices) -> None:
+def run_tests(br: MockSquawk, world: SimulatedServices) -> None:
     for fid in FEATURES:
         br.record_test(DEP, fid, *world.probe(fid, br.now), world.says(FEATURES[fid].service))
 
 
 @pytest.fixture
-def hall() -> tuple[MockBlastRadius, SimulatedServices]:
-    br, world = MockBlastRadius(), SimulatedServices()
+def hall() -> tuple[MockSquawk, SimulatedServices]:
+    br, world = MockSquawk(), SimulatedServices()
     run_tests(br, world)  # baseline: everything passes, quietly
     return br, world
 
 
-def degrade(br: MockBlastRadius, world: SimulatedServices, dependency: str, at: int) -> None:
+def degrade(br: MockSquawk, world: SimulatedServices, dependency: str, at: int) -> None:
     world.set_dependency(dependency, "down", br.now)
     br.advance(at)
     run_tests(br, world)
@@ -62,10 +62,10 @@ def test_age_limits():
     assert world.probe("keys.revocation", 110)[0] is False
 
 
-# What Blast Radius does with the results ------------------------------------------------
+# What Squawk does with the results ------------------------------------------------
 
 
-def test_blast_radius_sets_the_state_and_logs_only_changes(hall):
+def test_squawk_sets_the_state_and_logs_only_changes(hall):
     br, world = hall
     assert not [e for e in br.events if e.type == "feature_state"]  # the baseline is quiet
     degrade(br, world, "sms-gateway", 5)
@@ -80,7 +80,7 @@ def test_blast_radius_sets_the_state_and_logs_only_changes(hall):
 
 
 def test_agents_cant_record_tests():
-    br = MockBlastRadius()
+    br = MockSquawk()
     with pytest.raises(Exception, match="may not record test"):
         br.record_test(FIXER, "paging.text", False, "made up")
 
@@ -184,7 +184,7 @@ def test_a_retest_that_passes_is_a_one_off(hall):
     assert any(e.type == "notified" and e.data["to"] == "shift lead" for e in br.events)
 
 
-def test_storyline_both_agents_through_blast_radius():
+def test_storyline_both_agents_through_squawk():
     br, dependency, fixer = run_demo(ScriptedModel(), out=lambda line: None)
     assert [(o.issue.kind, o.issue.subject, o.status) for o in dependency.outcomes] == [
         ("paging_degraded", "paging.text", "fixed"),

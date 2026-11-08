@@ -68,7 +68,7 @@ From the repo root, `bash dev.sh up` does all of this (with `bash dev.sh server`
 cd frontend
 npm install                 # adds the spacetimedb SDK
 npm run bindings            # spacetime generate -> src/module_bindings (rerun when tables change)
-cp .env.example .env.local  # VITE_SPACETIMEDB_URI=http://localhost:3000, VITE_SPACETIMEDB_DB=blast-radius
+cp .env.example .env.local  # VITE_SPACETIMEDB_URI=http://localhost:3000, VITE_SPACETIMEDB_DB=squawk
 npm run dev
 ```
 

@@ -1,4 +1,4 @@
-# Blast Radius backend (SpacetimeDB)
+# Squawk backend (SpacetimeDB)
 
 The backend is one SpacetimeDB module written in TypeScript. Tables hold the facility map and everything the control-room view shows. Reducers are the only way to change anything, and each reducer runs as one transaction. So when two actors ask for the same backup at the same moment, SpacetimeDB runs one request after the other: the second one sees the first one's lease and is refused.
 
@@ -29,8 +29,8 @@ npm test                       # unit, scenario, test bed and frontend contract 
 npm run test:scale             # 100k-GPU performance limits
 
 spacetime start                # local server on :3000, keep it running
-spacetime publish --server local --module-path . blast-radius
-spacetime logs --server local blast-radius
+spacetime publish --server local --module-path . squawk
+spacetime logs --server local squawk
 ```
 
 `spacetime publish` runs `tsc --noEmit` on this folder before it bundles, so a type error stops it; `npm run typecheck` shows the same errors. If the CLI isn't logged in, publish first asks to log in with spacetimedb.com: say yes (free, and it works with the local server). Keep the `spacetimedb` npm package no newer than the CLI (`spacetime --version`); `spacetime version upgrade` updates the CLI.
@@ -41,7 +41,7 @@ Then open the control room (see `frontend/README.md`, "Live mode"): it shows wha
 
 ## Diagnostics test bed
 
-A fresh database is the demo hall at T+3h with five incidents, so diagnostic agents have real cases to work on. Reload it any time with `spacetime call --server local blast-radius seed_diagnostics`.
+A fresh database is the demo hall at T+3h with five incidents, so diagnostic agents have real cases to work on. Reload it any time with `spacetime call --server local squawk seed_diagnostics`.
 
 | # | Incident | Failed nodes | What it tests | Answer (the engine's) |
 | --- | --- | --- | --- | --- |
@@ -59,7 +59,7 @@ A fresh database is the demo hall at T+3h with five incidents, so diagnostic age
 2. Call `diagnose_failure(nodes)` (as a `scheduler_agent` or `technician` identity), then read the newest row of `diagnosis`: classification, cause, at-risk nodes, who to send, and the one-line reason.
 3. Optionally `safe_placement(...)` to find where the job can restart.
 
-**Grading.** The answer key is the private `incident` table. An agent connected with its own identity can't read it. Read it as the owner with `spacetime sql --server local blast-radius "SELECT * FROM incident"` and compare `expect_classification`, `expect_cause` and `expect_send` with what the agent concluded. `test/lab.test.ts` checks that the engine itself gets all five right.
+**Grading.** The answer key is the private `incident` table. An agent connected with its own identity can't read it. Read it as the owner with `spacetime sql --server local squawk "SELECT * FROM incident"` and compare `expect_classification`, `expect_cause` and `expect_send` with what the agent concluded. `test/lab.test.ts` checks that the engine itself gets all five right.
 
 Diagnosis rules (DESIGN.md §5): a degraded or failed part above the node is the cause. Otherwise, a row-level part (PDU, CDU, leaf) shared with another failure in the last 2 h is the cause; the most specific one wins (the one with the fewest racks below it), and on a tie the one with no backup (the leaf). Central plant (UPS, utility, chillers, spines) sits above most of the hall, so sharing it counts for nothing. Anything else is isolated.
 
@@ -69,11 +69,11 @@ The control room's step list (DESIGN.md §10.2) now runs on the backend. Each st
 
 | Reducer | Does |
 | --- | --- |
-| `scenario_start(mode)` | Clean demo hall at T+0, ready for step 1. `mode`: `naive` or `blast_radius` |
+| `scenario_start(mode)` | Clean demo hall at T+0, ready for step 1. `mode`: `naive` or `squawk` |
 | `scenario_next(mode)` | Runs the next step. From the test bed (or the other mode) it starts a clean run first |
 | `scenario_goto(mode, step)` | Reseeds and replays to step (0-based) in one transaction |
 | `reset_demo()` | `scenario_start` in the current mode |
-| `naive_restart(job, failed_node)` | What a scheduler does without Blast Radius: swap in the nearest free node, no diagnosis, no check |
+| `naive_restart(job, failed_node)` | What a scheduler does without Squawk: swap in the nearest free node, no diagnosis, no check |
 
 The `scenario` table (one row) holds the mode, the step, the caption and the camera target; the view reads it. `bed` says what the hall holds: `demo`, `lab` (the test bed) or `scale`.
 
@@ -82,7 +82,7 @@ The `scenario` table (one row) holds the mode, the step, the caption and the cam
 Reducer names are snake_case on the CLI and camelCase in the client SDK (`conn.reducers.requestWork({...})`). Arguments are JSON values in parameter order:
 
 ```bash
-DB="--server local blast-radius"
+DB="--server local squawk"
 spacetime call $DB reset_demo                                                # clean hall (init loads the test bed)
 spacetime call $DB set_part_state '"cdu-3"' '"degraded"'
 spacetime call $DB report_node_failure '"node-417"'

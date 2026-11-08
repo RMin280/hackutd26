@@ -190,7 +190,7 @@ def check_round_trip(ep: Any, settings: Any, bad: Callable[..., None], r: Report
         {
             "role": "system",
             "content": (
-                "You are a datacenter operations agent connected to Blast Radius. "
+                "You are a datacenter operations agent connected to Squawk. "
                 "Always check with a tool before answering. Answer in one short sentence."
             ),
         },
@@ -276,14 +276,14 @@ def check_spacetime(r: Report, settings: Any) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Check the Blast Radius agent setup.")
+    parser = argparse.ArgumentParser(description="Check the Squawk agent setup.")
     parser.add_argument("--no-llm", action="store_true", help="skip all model requests")
     parser.add_argument("--backup", action="store_true", help="also run the round trip on the backup")
     args = parser.parse_args(argv)
     sys.stdout.reconfigure(errors="replace")  # type: ignore[attr-defined]  # model text on cp1252 consoles
 
     r = Report()
-    print("Blast Radius agent setup check\n")
+    print("Squawk agent setup check\n")
     check_python(r)
     if not check_packages(r):
         return 1

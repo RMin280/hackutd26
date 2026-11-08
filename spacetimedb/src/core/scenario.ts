@@ -22,8 +22,8 @@ import type { Store } from './store';
 import { label } from './text';
 import { RequestError, type ActorRow, type Role, type ScenarioRow } from './types';
 
-export type Mode = 'naive' | 'blast_radius';
-export const MODES: readonly Mode[] = ['naive', 'blast_radius'];
+export type Mode = 'naive' | 'squawk';
+export const MODES: readonly Mode[] = ['naive', 'squawk'];
 export const isMode = (m: string): m is Mode => (MODES as readonly string[]).includes(m);
 
 /** Built-in actors for scripted steps. Fixed hex identities no real client will ever have. */
@@ -159,7 +159,7 @@ const naive: Step[] = [
   },
 ];
 
-const blastRadius: Step[] = [
+const squawk: Step[] = [
   ...shared,
   {
     at: 11,
@@ -169,7 +169,7 @@ const blastRadius: Step[] = [
       patchScenario(s, { diagnosisId: id });
       const d = s.diagnosis(id)!;
       return {
-        caption: `Blast Radius diagnoses ${FIRST}: shared cause ${label(d.cause)}. ${d.atRisk.length} other job nodes are at risk. Send a ${d.send}.`,
+        caption: `Squawk diagnoses ${FIRST}: shared cause ${label(d.cause)}. ${d.atRisk.length} other job nodes are at risk. Send a ${d.send}.`,
         camera: onRacks(causeRacks(s), [CAUSE]),
       };
     },
@@ -245,7 +245,7 @@ const blastRadius: Step[] = [
   },
 ];
 
-export const STEPS: Record<Mode, Step[]> = { naive, blast_radius: blastRadius };
+export const STEPS: Record<Mode, Step[]> = { naive, squawk: squawk };
 
 // ---------------------------------------------------------------- reducers' logic
 
@@ -340,5 +340,5 @@ export function scenarioGoto(s: Store, identity: string, mode: string, step: num
 /** Back to a clean hall in the current mode (the old reset_demo). */
 export function resetDemo(s: Store, identity: string): void {
   const mode = s.scenario()?.mode;
-  scenarioStart(s, identity, mode && isMode(mode) ? mode : 'blast_radius');
+  scenarioStart(s, identity, mode && isMode(mode) ? mode : 'squawk');
 }

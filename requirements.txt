@@ -1,4 +1,4 @@
-# Python side of Blast Radius: the agents (and later the MCP server).
+# Python side of Squawk: the agents (and later the MCP server).
 # Facility state and core logic live in the SpacetimeDB module (teammate's branch).
 openai>=1.50          # OpenAI-compatible client, pointed at OpenRouter for Nemotron
 httpx>=0.27           # OpenRouter key check + SpacetimeDB HTTP API

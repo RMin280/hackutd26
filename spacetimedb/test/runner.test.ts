@@ -14,7 +14,7 @@ const EXPECTED = {
     [50, 'node-422 fails'],
     [52, 'Naive restart again'],
   ],
-  blast_radius: [
+  squawk: [
     [0, 'CDU-3 degrades'],
     [10, 'node-417 fails'],
     [11, 'Diagnose the failure'],
@@ -32,7 +32,7 @@ function presenter() {
 }
 
 test('step lists match the view', () => {
-  for (const mode of ['naive', 'blast_radius'] as const) {
+  for (const mode of ['naive', 'squawk'] as const) {
     assert.deepEqual(
       STEPS[mode].map((st) => [st.at, st.title]),
       EXPECTED[mode],
@@ -41,11 +41,11 @@ test('step lists match the view', () => {
   }
 });
 
-test('Blast Radius mode: one crash, one restart, CDU-4 refused', () => {
+test('Squawk mode: one crash, one restart, CDU-4 refused', () => {
   const s = presenter();
-  scenarioStart(s, ID.lead, 'blast_radius');
+  scenarioStart(s, ID.lead, 'squawk');
   assert.equal(s.scenario()!.step, -1);
-  for (let i = 0; i < STEPS.blast_radius.length; i++) scenarioNext(s, ID.lead, 'blast_radius');
+  for (let i = 0; i < STEPS.squawk.length; i++) scenarioNext(s, ID.lead, 'squawk');
   const sc = s.scenario()!;
   assert.equal(sc.step, 6);
   assert.equal(s.now(), 50);
@@ -61,8 +61,8 @@ test('Blast Radius mode: one crash, one restart, CDU-4 refused', () => {
     [
       'Facility: CDU-3 degraded',
       'Scheduler: node-417 failed, job-train-1 stopped',
-      'Blast Radius: Diagnosis: shared cause CDU-3',
-      'Blast Radius: Safe placement: 40 nodes',
+      'Squawk: Diagnosis: shared cause CDU-3',
+      'Squawk: Safe placement: 40 nodes',
       'Scheduler agent: Restarted job-train-1 on 40 new nodes',
       'Scheduler agent: Protection lease for job-train-1 granted',
       'Cooling agent: Maintenance on CDU-4 denied',
@@ -73,7 +73,7 @@ test('Blast Radius mode: one crash, one restart, CDU-4 refused', () => {
     s.scenario()!.caption,
     'node-422 fails, exactly as in the naive run, but it was already moved out of the job. One restart, no second outage.',
   );
-  assert.equal(scenarioNext(s, ID.lead, 'blast_radius'), undefined, 'past the last step nothing happens');
+  assert.equal(scenarioNext(s, ID.lead, 'squawk'), undefined, 'past the last step nothing happens');
   assert.equal(s.scenario()!.step, 6);
 });
 
@@ -93,10 +93,10 @@ test('naive mode: swaps blindly and crashes twice', () => {
 
 test('jumping to a step replays to the same state', () => {
   const a = presenter();
-  for (let i = 0; i <= 4; i++) scenarioNext(a, ID.lead, 'blast_radius');
+  for (let i = 0; i <= 4; i++) scenarioNext(a, ID.lead, 'squawk');
   const b = presenter();
   scenarioNext(b, ID.lead, 'naive');
-  scenarioGoto(b, ID.lead, 'blast_radius', 4);
+  scenarioGoto(b, ID.lead, 'squawk', 4);
   const snap = (s: typeof a) => ({
     now: s.now(),
     step: s.scenario()!.step,
@@ -113,9 +113,9 @@ test('a fresh database holds the test bed; Space starts the demo from it', () =>
   const s = freshDatabase();
   assert.equal(s.scenario()!.bed, 'lab');
   assert.equal(s.part('cdu-29')!.state, 'failed');
-  scenarioNext(s, ID.lead, 'blast_radius');
+  scenarioNext(s, ID.lead, 'squawk');
   const sc = s.scenario()!;
-  assert.deepEqual([sc.bed, sc.step, sc.mode], ['demo', 0, 'blast_radius']);
+  assert.deepEqual([sc.bed, sc.step, sc.mode], ['demo', 0, 'squawk']);
   assert.equal(s.part('cdu-29')!.state, 'ok', 'the demo starts from a clean hall');
   assert.equal(s.part('cdu-3')!.state, 'degraded');
   assert.equal(s.decisions.length, 1);
@@ -123,6 +123,6 @@ test('a fresh database holds the test bed; Space starts the demo from it', () =>
 
 test('only a shift lead or admin can run the scenario', () => {
   const s = presenter();
-  assert.throws(() => scenarioNext(s, ID.tech, 'blast_radius'), /can't run the scenario/);
-  assert.throws(() => scenarioStart(s, ID.lead, 'chaos'), /mode must be naive or blast_radius/);
+  assert.throws(() => scenarioNext(s, ID.tech, 'squawk'), /can't run the scenario/);
+  assert.throws(() => scenarioStart(s, ID.lead, 'chaos'), /mode must be naive or squawk/);
 });

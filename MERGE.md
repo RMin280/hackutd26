@@ -13,11 +13,11 @@
 | Path | What it is |
 | --- | --- |
 | `agents/llm.py`, `agents/config.py` | Model access: our Nemotron on a Brev GPU machine first, Nemotron 3 Ultra (free) on OpenRouter as automatic backup |
-| `agents/fixer/` | The fixer agent: fixes four low-criticality issue types only through Blast Radius, planning its own steps (DESIGN.md §8.2) |
-| `agents/dependency/` | The dependency agent: catches services that say they're up while a feature we rely on is broken, and responds through Blast Radius (DESIGN.md §8.3, `agents/DEPENDENCY_AGENT.md`) |
+| `agents/fixer/` | The fixer agent: fixes four low-criticality issue types only through Squawk, planning its own steps (DESIGN.md §8.2) |
+| `agents/dependency/` | The dependency agent: catches services that say they're up while a feature we rely on is broken, and responds through Squawk (DESIGN.md §8.3, `agents/DEPENDENCY_AGENT.md`) |
 | `agents/common/` | What both agents share: planning rules, tools bound to the issue, the model loop, the event loop |
-| `agents/blast_radius.py` | The interface the agents code against: every read, check and action they need from Blast Radius |
-| `agents/mock_blast_radius.py`, `agents/mock_services.py` | A simulated hall and the services it relies on, implementing that interface (same IDs as the frontend mock), used until SpacetimeDB exists |
+| `agents/squawk.py` | The interface the agents code against: every read, check and action they need from Squawk |
+| `agents/mock_squawk.py`, `agents/mock_services.py` | A simulated hall and the services it relies on, implementing that interface (same IDs as the frontend mock), used until SpacetimeDB exists |
 | `agents/check_setup.py` | `python -m agents.check_setup`: checks keys, models and SpacetimeDB reachability |
 | `agents/README.md`, `agents/DEPENDENCY_AGENT.md` | How the agents work, plus the full SpacetimeDB contract |
 | `tests/` | 83 tests (`pytest`) |
@@ -45,7 +45,7 @@ The full contract (tables, reducers, rules) is in [`agents/README.md`](agents/RE
 - [ ] **Reducers:**
   - `simulate`, `diagnose_failure`, `request_lease` (with `on_behalf_of`), `release_lease`, `request_approval`, `approve`, `dispatch_tech`, `notify`, `escalate`, `record`.
   - For the dependency agent: `record_test`, `resend_page`.
-- [ ] **Identities and roles:** one identity per actor: `fixer-agent` (remediation_agent), `dependency-agent` (dependency_watch), `cooling-agent`, `scheduler-agent`, `shift-lead`. The permissions per role are `PERMISSIONS` in `agents/mock_blast_radius.py`.
+- [ ] **Identities and roles:** one identity per actor: `fixer-agent` (remediation_agent), `dependency-agent` (dependency_watch), `cooling-agent`, `scheduler-agent`, `shift-lead`. The permissions per role are `PERMISSIONS` in `agents/mock_squawk.py`.
 - [ ] **Rules the module enforces:**
   - Each call checks the caller's role and rows first, and every call is audited.
   - Node maintenance is denied if the node runs a running job, warned if a tenant node is still working, and allowed if it's a spare or already down.
@@ -61,12 +61,12 @@ The full contract (tables, reducers, rules) is in [`agents/README.md`](agents/RE
 | Event `type` | `subject` | `data` fields | Written by |
 | --- | --- | --- | --- |
 | `state_change` | node or part | `kind` (node/part), `state`, `previous`, `note` (free text, untrusted) | facility / scenario |
-| `lease_granted` | target part or node, or the job | `lease`, `target`, `verdict`, `until`, `routine`, `holder`, `approved_by`; protection leases: `job`, `racks` (count) | Blast Radius |
-| `lease_denied` | target | `verdict` (deny/warn), `routine`, `minutes`, `note`, `earliest_safe`, `blockers` | Blast Radius |
-| `lease_released`, `lease_expired` | lease id | `lease_type`, `target`, `job`, `holder`, `note` | Blast Radius |
-| `release_denied` | lease id | none (the reason says why) | Blast Radius |
+| `lease_granted` | target part or node, or the job | `lease`, `target`, `verdict`, `until`, `routine`, `holder`, `approved_by`; protection leases: `job`, `racks` (count) | Squawk |
+| `lease_denied` | target | `verdict` (deny/warn), `routine`, `minutes`, `note`, `earliest_safe`, `blockers` | Squawk |
+| `lease_released`, `lease_expired` | lease id | `lease_type`, `target`, `job`, `holder`, `note` | Squawk |
+| `release_denied` | lease id | none (the reason says why) | Squawk |
 | `job_status` | job | `status` (running/stopped/finished), `previous` | scenario / scheduler |
-| `feature_state` | feature id, e.g. `bms.cooling.3` | `feature`, `service`, `state` (degraded/working), `previous`, `previous_since`, `last_good`, `covers`, `service_says` | Blast Radius, from a recorded test |
+| `feature_state` | feature id, e.g. `bms.cooling.3` | `feature`, `service`, `state` (degraded/working), `previous`, `previous_since`, `last_good`, `covers`, `service_says` | Squawk, from a recorded test |
 | `tech_dispatched` | node, part or gateway | `trade`, `note`, `page`, `channel`, `page_status` | an agent |
 | `notified` | node, part or feature | `to`, `message`, `page`, `channel`, `page_status` | an agent |
 | `page_resent` | what the page was about | `page`, `to`, `channel`, `first_sent` | dependency agent |

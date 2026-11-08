@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Blast Radius: run the backend (SpacetimeDB) and the control-room view together.
+# Squawk: run the backend (SpacetimeDB) and the control-room view together.
 #
 #   bash dev.sh server     terminal 1: local SpacetimeDB on :3000 (leave it running)
 #   bash dev.sh up         terminal 2: publish the module, then start the view in live mode
@@ -14,7 +14,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DB="${BLAST_RADIUS_DB:-blast-radius}" # database name on the local server
+DB="${SQUAWK_DB:-squawk}" # database name on the local server
 SERVER=local                          # the spacetime CLI's name for http://127.0.0.1:3000
 URI=http://localhost:3000             # what the browser connects to
 YES=--yes=migrate,break-clients,delete-data # answer publish's schema prompts, not the login one

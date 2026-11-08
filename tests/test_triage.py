@@ -6,15 +6,15 @@ from __future__ import annotations
 import pytest
 
 from agents.fixer.triage import FIXER, Handoff, Issue, triage
-from agents.mock_blast_radius import JOB_ID, MockBlastRadius
+from agents.mock_squawk import JOB_ID, MockSquawk
 
 
 @pytest.fixture
-def br() -> MockBlastRadius:
-    return MockBlastRadius()
+def br() -> MockSquawk:
+    return MockSquawk()
 
 
-def last(br: MockBlastRadius):
+def last(br: MockSquawk):
     return triage(br.events[-1], br)
 
 

@@ -46,7 +46,7 @@ export const ROLES: readonly Role[] = [
 ];
 
 /** Matches `ActorKind` in frontend/src/model/types.ts so the decision feed can render it. */
-export type ActorKind = 'facility' | 'scheduler' | 'cooling' | 'blast_radius';
+export type ActorKind = 'facility' | 'scheduler' | 'cooling' | 'squawk';
 
 /** Matches `Verdict` in frontend/src/model/types.ts (the decision feed's badge). */
 export type FeedVerdict =
@@ -244,7 +244,7 @@ export interface SettingsRow {
 /** The presenter's scenario (one row, id 0). The view reads its caption and camera. */
 export interface ScenarioRow {
   id: number;
-  mode: string; // 'naive' | 'blast_radius'
+  mode: string; // 'naive' | 'squawk'
   bed: string; // what the hall holds: 'demo' (scenario), 'lab' (diagnostics test bed), 'scale'
   step: number; // -1 = ready, before the first step
   total: number;

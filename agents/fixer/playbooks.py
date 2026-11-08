@@ -1,5 +1,5 @@
 """The fixer agent's four playbooks: each issue type's goal, its tools (bound to the
-issue), the check each action needs first, what's still allowed after Blast Radius
+issue), the check each action needs first, what's still allowed after Squawk
 refuses something, and the deterministic check that decides whether it's really fixed.
 
 The planning rules and the ToolBox they run in are shared by every agent
@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any
 
-from ..blast_radius import LeaseDecision, fmt_time, label
+from ..squawk import LeaseDecision, fmt_time, label
 from ..common.playbook import COMMON_TOOLS, Playbook, Run, Tool, events_by, text_param
 
 
@@ -111,11 +111,11 @@ TOOLS: dict[str, Tool] = {
     **{
         t.name: t
         for t in (
-            Tool("diagnose_node", "Blast Radius's diagnosis of this issue's node: isolated or shared cause, with the reason.", _diagnose_node),
+            Tool("diagnose_node", "Squawk's diagnosis of this issue's node: isolated or shared cause, with the reason.", _diagnose_node),
             Tool("check_rack", "Backup margins and protection locks for this issue's rack.", _check_rack),
             Tool(
                 "take_node_out_of_service",
-                "Ask Blast Radius for a maintenance lease on this issue's node, so no scheduler or agent uses it during repair. Blast Radius may refuse.",
+                "Ask Squawk for a maintenance lease on this issue's node, so no scheduler or agent uses it during repair. Squawk may refuse.",
                 _take_node_out_of_service,
                 {
                     "hours": {"type": "integer", "minimum": 1, "maximum": 24, "description": "Repair window in hours, 1 to 24."},
@@ -151,10 +151,10 @@ TOOLS: dict[str, Tool] = {
                 acts=True,
                 needs=("check_rack",),
             ),
-            Tool("recheck_maintenance", "Ask Blast Radius whether the refused maintenance would be allowed now.", _recheck_maintenance),
+            Tool("recheck_maintenance", "Ask Squawk whether the refused maintenance would be allowed now.", _recheck_maintenance),
             Tool(
                 "book_maintenance",
-                "Book the maintenance for the requester, who then holds the lease. Blast Radius refuses it unless its check allows it.",
+                "Book the maintenance for the requester, who then holds the lease. Squawk refuses it unless its check allows it.",
                 _book_maintenance,
                 {"note": text_param("One line on why.")},
                 acts=True,
@@ -190,7 +190,7 @@ TOOLS: dict[str, Tool] = {
             Tool("check_job", "Status of the job this protection lock was for, and the lock itself.", _check_job),
             Tool(
                 "release_protection_lock",
-                "Release the stale protection lock. Blast Radius refuses unless the job has finished.",
+                "Release the stale protection lock. Squawk refuses unless the job has finished.",
                 _release_protection_lock,
                 {"note": text_param("One line on why.")},
                 acts=True,
@@ -262,7 +262,7 @@ PLAYBOOKS: dict[str, Playbook] = {
     "maintenance_refused": Playbook(
         "maintenance_refused",
         "A routine maintenance request was refused earlier, and what blocked it has cleared.\n"
-        "Done means one of three outcomes. If Blast Radius allows it now, it's booked for the requester. If it says warn, "
+        "Done means one of three outcomes. If Squawk allows it now, it's booked for the requester. If it says warn, "
         "the shift lead has a ready-to-approve request (never book a warn yourself). If it's still refused (deny), it goes "
         "back to waiting with keep_waiting. Unless it goes back to waiting, tell the requester where it stands.\n"
         "Recheck before anything else.",

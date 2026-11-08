@@ -1,6 +1,6 @@
 """The dependency agent's storyline on the simulated hall, with the fixer running
 alongside. Services fail in ways they don't report; scheduled tests catch them; the two
-agents work through Blast Radius and never talk to each other directly.
+agents work through Squawk and never talk to each other directly.
 
     T+41  SMS gateway down (paging still says up)      -> fixer's page at T+42 re-sent by email
     T+60  gateway 3 quiet (BMS still says up)          -> CDU-17..24 unknown, handed to the shift lead
@@ -13,23 +13,23 @@ from __future__ import annotations
 
 from typing import Callable
 
-from ..blast_radius import fmt_time
+from ..squawk import fmt_time
 from ..common.feed import describe
 from ..common.loop import Model
 from ..common.runner import settle
 from ..fixer.runner import FixerRunner
-from ..mock_blast_radius import MockBlastRadius
+from ..mock_squawk import MockSquawk
 from ..mock_services import SimulatedServices
 from .runner import DependencyRunner
 
-Step = Callable[[MockBlastRadius, SimulatedServices], None]
+Step = Callable[[MockSquawk, SimulatedServices], None]
 
 
-def _nothing(br: MockBlastRadius, world: SimulatedServices) -> None:
+def _nothing(br: MockSquawk, world: SimulatedServices) -> None:
     pass
 
 
-def _approve_cdu25(br: MockBlastRadius, world: SimulatedServices) -> None:
+def _approve_cdu25(br: MockSquawk, world: SimulatedServices) -> None:
     asked = [e for e in br.events if e.type == "approval_requested" and e.subject == "cdu-25"]
     if asked:
         br.approve("shift-lead", asked[-1].data["approval"])
@@ -60,8 +60,8 @@ STORY: tuple[tuple[int, str, Step], ...] = (
 )
 
 
-def run_demo(model: Model, out: Callable[[str], None] = print) -> tuple[MockBlastRadius, DependencyRunner, FixerRunner]:
-    br, world = MockBlastRadius(), SimulatedServices()
+def run_demo(model: Model, out: Callable[[str], None] = print) -> tuple[MockSquawk, DependencyRunner, FixerRunner]:
+    br, world = MockSquawk(), SimulatedServices()
     dependency, fixer = DependencyRunner(br, model, world), FixerRunner(br, model)
     shown = 0
     for at, caption, step in STORY:

@@ -1,11 +1,11 @@
-"""The fixer agent: Nemotron fixes low-criticality issues through Blast Radius, planning
+"""The fixer agent: Nemotron fixes low-criticality issues through Squawk, planning
 its own steps toward each issue's goal. The loop, the planning rules and the fail-closed
 behavior are shared with every agent (agents/common/loop.py).
 """
 
 from __future__ import annotations
 
-from ..blast_radius import BlastRadius
+from ..squawk import Squawk
 from ..common.issues import Issue
 from ..common.loop import MAX_MODEL_CALLS, Model, Outcome, issue_message, run_agent
 from ..common.loop import system_prompt as _system_prompt
@@ -15,7 +15,7 @@ from .triage import FIXER
 __all__ = ["INTRO", "MAX_MODEL_CALLS", "Model", "Outcome", "issue_message", "run_fixer", "system_prompt"]
 
 INTRO = (
-    "You are the fixer agent for Blast Radius, the safety interlock of a simulated datacenter. Blast Radius has "
+    "You are the fixer agent for Squawk, the safety interlock of a simulated datacenter. Squawk has "
     "already triaged this issue as low criticality. Reach the goal below using only the tools you're given."
 )
 
@@ -26,7 +26,7 @@ def system_prompt(kind: str) -> str:
 
 def run_fixer(
     issue: Issue,
-    br: BlastRadius,
+    br: Squawk,
     model: Model,
     *,
     actor: str = FIXER,

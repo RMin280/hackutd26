@@ -4,5 +4,5 @@
 const env = import.meta.env;
 
 export const LIVE_URI: string | undefined = env.VITE_SPACETIMEDB_URI || undefined;
-export const LIVE_DB: string = env.VITE_SPACETIMEDB_DB || 'blast-radius';
+export const LIVE_DB: string = env.VITE_SPACETIMEDB_DB || 'squawk';
 export const liveEnabled = Boolean(LIVE_URI);

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Union
 
-from ..blast_radius import Blocker
+from ..squawk import Blocker
 
 
 @dataclass(frozen=True)

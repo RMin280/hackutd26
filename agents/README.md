@@ -1,6 +1,6 @@
 # Agents
 
-LLM agents for Blast Radius talk to two NVIDIA Nemotron endpoints over the OpenAI-compatible chat API:
+LLM agents for Squawk talk to two NVIDIA Nemotron endpoints over the OpenAI-compatible chat API:
 
 | Role | Where | Why |
 | --- | --- | --- |
@@ -9,13 +9,13 @@ LLM agents for Blast Radius talk to two NVIDIA Nemotron endpoints over the OpenA
 
 `agents/llm.py`'s `ModelRouter` sends every request to the primary. On an outage-type error (unreachable, timeout, 5xx, 429, model missing, bad key, or not set up yet) it resends the same request to the backup and stays there for `LLM_FAILOVER_COOLDOWN` seconds before trying the primary again. Bad requests (400) are raised, not retried elsewhere. If both fail, it raises `ModelUnavailable` and the agent acts on nothing and escalates (fail closed).
 
-The model only proposes tool calls and writes explanations; Blast Radius makes every safety decision; the agent runtime enforces it. The facility itself lives in the teammate's SpacetimeDB module.
+The model only proposes tool calls and writes explanations; Squawk makes every safety decision; the agent runtime enforces it. The facility itself lives in the teammate's SpacetimeDB module.
 
 ## Fixer agent: low-criticality fixes
 
-`agents/fixer/` watches Blast Radius events, decides deterministically which ones are low-criticality issues, and has Nemotron fix those through Blast Radius. Everything else goes to the shift lead, or to the scheduler agent for job nodes.
+`agents/fixer/` watches Squawk events, decides deterministically which ones are low-criticality issues, and has Nemotron fix those through Squawk. Everything else goes to the shift lead, or to the scheduler agent for job nodes.
 
-**Low means:** every rack keeps full backup, nothing in a running job is touched, and Blast Radius allows every action. Code decides this (`triage.py`), never the model.
+**Low means:** every rack keeps full backup, nothing in a running job is touched, and Squawk allows every action. Code decides this (`triage.py`), never the model.
 
 | Issue | Trigger | What the agent does | Hands off instead when |
 | --- | --- | --- | --- |
@@ -31,12 +31,12 @@ The model only proposes tool calls and writes explanations; Blast Radius makes e
 
 **Guardrails, enforced in code (`agents/common/playbook.py`, `agents/common/loop.py`) and shared by both agents:**
 - Tools are bound to the issue: Nemotron chooses the plan, the wording and a repair window of 1 to 24 h, but never the target.
-- Every action goes through Blast Radius, which checks scope and verdict first. After a refusal, only the playbook's follow-ups are allowed.
+- Every action goes through Squawk, which checks scope and verdict first. After a refusal, only the playbook's follow-ups are allowed.
 - When the model says it's done, deterministic checks confirm the result (lease held, tech sent, tenant told, lock gone). If they fail, the issue goes to the shift lead.
 - At most 10 model calls per issue. Text from reports is fenced as `<untrusted>` data.
-- Fails closed: no model or no Blast Radius means nothing more happens and the issue goes to a person.
+- Fails closed: no model or no Squawk means nothing more happens and the issue goes to a person.
 
-**Run it** on the simulated hall (`agents/mock_blast_radius.py`, same IDs as the control-room view):
+**Run it** on the simulated hall (`agents/mock_squawk.py`, same IDs as the control-room view):
 
 ```
 .venv\Scripts\python -m agents.fixer              # Nemotron: Brev primary, OpenRouter free backup
@@ -49,10 +49,10 @@ The storyline has one issue of each type, two handoffs, and a technician report 
 
 ## Dependency agent: gray failures in services we rely on
 
-`agents/dependency/` runs scheduled tests of the features we use from three services: text and email paging, building management readings for each CDU gateway, and the revoked-key list. The tests are code and cost no model calls. Blast Radius sets each feature's state from the results. When a service says it's up but a feature is broken, the dependency agent responds:
+`agents/dependency/` runs scheduled tests of the features we use from three services: text and email paging, building management readings for each CDU gateway, and the revoked-key list. The tests are code and cost no model calls. Squawk sets each feature's state from the results. When a service says it's up but a feature is broken, the dependency agent responds:
 - **Paging:** re-sends pages that went out during the blind window.
 - **Stale readings:** gathers the racks that can't confirm backup, and hands off.
-- **Stale revoked-key list:** Blast Radius fails closed, and the agent pages security.
+- **Stale revoked-key list:** Squawk fails closed, and the agent pages security.
 - **Recovery:** confirms it with a second test.
 
 It runs on the same planning, guardrails and fail-closed rules as the fixer. The full design is in [`DEPENDENCY_AGENT.md`](DEPENDENCY_AGENT.md).
@@ -67,8 +67,8 @@ It runs on the same planning, guardrails and fail-closed rules as the fixer. The
 | Criterion | Where it shows |
 | --- | --- |
 | Beyond a chatbot | Nobody prompts the agents. They wake on facility events and on their own scheduled tests, act, and hand off what isn't theirs. |
-| Multi-step workflows | For each issue, Nemotron writes its own plan, carries it out, and revises it when a result changes things. Two agents coordinate through Blast Radius without talking to each other. The dependency agent re-sends a page the fixer sent while paging was silently broken. The fixer queues a maintenance request until the dependency agent's tests show the CDU readings are fresh again. |
-| Tool integration | Function calling against Blast Radius's API (diagnosis, what-if checks, leases, dispatch, paging, approvals, test results), with every call checked and audited. Model access spans two services, our Nemotron on Brev and OpenRouter as backup, with automatic failover. Once the SpacetimeDB module lands, the same tools call its HTTP API. |
+| Multi-step workflows | For each issue, Nemotron writes its own plan, carries it out, and revises it when a result changes things. Two agents coordinate through Squawk without talking to each other. The dependency agent re-sends a page the fixer sent while paging was silently broken. The fixer queues a maintenance request until the dependency agent's tests show the CDU readings are fresh again. |
+| Tool integration | Function calling against Squawk's API (diagnosis, what-if checks, leases, dispatch, paging, approvals, test results), with every call checked and audited. Model access spans two services, our Nemotron on Brev and OpenRouter as backup, with automatic failover. Once the SpacetimeDB module lands, the same tools call its HTTP API. |
 | Real-world applicability | The agents clear the routine work that piles up in big GPU halls, and catch services that quietly stop doing their job. They never act outside the safety interlock, and fail closed when they can't trust what they see. |
 
 ## Setup
@@ -110,7 +110,7 @@ An agent run costs about one request per step. `check_setup` shows today's remai
 
 ## SpacetimeDB contract (for the backend)
 
-The agents code against `agents/blast_radius.py` (`BlastRadius`). Today `MockBlastRadius` implements it in-process. Once the SpacetimeDB module covers the tables and reducers below, a thin HTTP adapter replaces the mock, with no change to the agents.
+The agents code against `agents/squawk.py` (`Squawk`). Today `MockSquawk` implements it in-process. Once the SpacetimeDB module covers the tables and reducers below, a thin HTTP adapter replaces the mock, with no change to the agents.
 
 Python has no maintained SpacetimeDB SDK, so agents use its HTTP API: `POST /v1/database/<db>/sql` to read, `POST /v1/database/<db>/call/<reducer>` (JSON array of arguments) to act, and `POST /v1/identity` for each agent's token (`Authorization: Bearer <token>`). Reducers don't return values, so a call whose answer the agent needs takes a `request_id`, and the module writes the answer to a table keyed by it.
 
@@ -125,7 +125,7 @@ Python has no maintained SpacetimeDB SDK, so agents use its HTTP API: `POST /v1/
 | `lease` | id, type, actor, target (part **or node**), racks, job, start, end, **routine**, note | `lease()`, `leases_on()`, `protection_leases()` |
 | `node_failure` | node, time | `failures_since()` |
 | `event` | seq, time, type, actor, subject, reason, data (JSON) | `get_events(since)` |
-| `check_result`, `diagnosis`, `lease_decision` | request_id plus the fields in `blast_radius.py` | answers to the reducers below |
+| `check_result`, `diagnosis`, `lease_decision` | request_id plus the fields in `squawk.py` | answers to the reducers below |
 
 **Reducers the agents call** (each checks the caller's role and rows first, and audits the call)
 
@@ -138,7 +138,7 @@ Python has no maintained SpacetimeDB SDK, so agents use its HTTP API: `POST /v1/
 | `request_approval(target, minutes, summary, requested_for)` / `approve(approval_id)` | `approval_requested` event; on approve, the lease plus `lease_granted` (shift lead only) |
 | `dispatch_tech(target, trade, note)`, `notify(to, subject, message)`, `escalate(subject, to, reason)`, `record(type, subject, reason, data)` | one event each |
 
-**Rules the module enforces (not the agent).** Node maintenance: deny if the node runs a running job, warn if a tenant node is still working, allow if it's a spare or already down. A protection lock can be released by its holder or a shift lead, or by the remediation agent once its job is `finished`. `on_behalf_of` needs the `book_for_others` permission, and the check runs as the requester. Role permissions are in `mock_blast_radius.py` (`PERMISSIONS`).
+**Rules the module enforces (not the agent).** Node maintenance: deny if the node runs a running job, warn if a tenant node is still working, allow if it's a spare or already down. A protection lock can be released by its holder or a shift lead, or by the remediation agent once its job is `finished`. `on_behalf_of` needs the `book_for_others` permission, and the check runs as the requester. Role permissions are in `mock_squawk.py` (`PERMISSIONS`).
 
 ## Settings (`.env`)
 

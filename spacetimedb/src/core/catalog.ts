@@ -220,7 +220,7 @@ export const CAN_DO: Record<Action, Role[]> = {
 };
 
 /** Decision-feed icon for each role (frontend ActorKind has four kinds). */
-export const ACTOR_KIND: Record<Role, 'facility' | 'scheduler' | 'cooling' | 'blast_radius'> = {
+export const ACTOR_KIND: Record<Role, 'facility' | 'scheduler' | 'cooling' | 'squawk'> = {
   admin: 'facility',
   shift_lead: 'facility',
   technician: 'facility',
