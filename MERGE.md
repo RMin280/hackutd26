@@ -125,13 +125,13 @@ Built on this branch and waiting on approval; see [`agents/DEPENDENCY_AGENT.md`]
 
 | Piece | Owner | Status |
 | --- | --- | --- |
-| SpacetimeDB tables, reducers and rules from the contract | SpacetimeDB teammate | No branch on GitHub yet |
-| HTTP adapter so the agents use SpacetimeDB instead of the simulated hall | Agents (`nemotron-init`) | Waiting on the module |
+| SpacetimeDB tables, reducers and rules from the contract | SpacetimeDB teammate | Module on `spacetime-init`; gaps listed in DESIGN.md §8.4 |
+| HTTP adapter so the agents use SpacetimeDB instead of the simulated hall | Agents (`nemotron-init`) | Next: after the DESIGN.md §8.4 additions |
 | Subscription, agent events in the decision feed, and §5 | Frontend teammate | Not started |
 | Brev machine as the primary model | Agents | Waiting on a Brev machine; the free OpenRouter backup works now |
 | Fixer agent | Agents | Built |
-| Dependency agent | Agents | Built, waiting on approval |
-| MCP server (frozen Build list) | Unassigned | Not started |
+| Dependency agent | Agents | Built; **deferred** until the fixer is live |
+| MCP server | Unassigned | If time, last |
 
 ## 7. Try it now (no backend needed)
 
