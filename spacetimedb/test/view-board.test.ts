@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { toEvents, toSite, toWorkItems, toWorld } from '../../frontend/src/live/mapping';
+import { nodesUnder, softwareWork } from '../../frontend/src/scene/software';
 import type { DecisionEvent, WorkItem } from '../../frontend/src/model/types';
 import {
   DONE_SHOWN,
@@ -248,4 +249,28 @@ test('offline the mock’s leases still read as items', () => {
   assert.equal(items[0].status, 'active');
   assert.equal(laneOf(items[0]), null, 'a lock, not a lane');
   assert.equal(locks({ leases: w.leases, now: w.now }, site).length, 1);
+});
+
+test('software work under way maps onto the nodes and switches the hall colours for it', () => {
+  const s = demo();
+  // An online patch on the whole job and a driver update on one spare, both active at T+0; a third booked for later.
+  const online = requestWork(s, ID.sched, work('sw_online', 'job-train-1', { durationMin: 30 }));
+  const driver = requestWork(s, ID.sched, work('sw_exclusive', 'node-1100', { durationMin: 90 }));
+  const booked = requestWork(s, ID.sched, work('sw_online', 'rack-r10-01', { startInMin: 120, durationMin: 10 }));
+  assert.deepEqual([online.verdict, driver.verdict, booked.verdict], ['allow', 'allow', 'allow']);
+  const w = toWorld(tablesOf(s), site);
+  const sw = softwareWork(site, w.owner, w.work);
+  assert.equal(sw.online.size, 1000, 'the job target covers its 1,000 nodes');
+  assert.deepEqual([...sw.drained], ['node-1100']);
+  assert.equal(w.nodeState['node-1100'], 'maintenance', 'held out of service while the driver installs');
+  assert.equal(w.nodeState['node-1'], 'ok', 'an online update leaves the node running');
+  // Booked for later is not under way: the view colours only active work.
+  assert.equal((w.work ?? []).find((x) => x.id === String(booked.id))?.status, 'granted');
+  assert.deepEqual(nodesUnder(site, w.owner, { targetKind: 'rack', target: 'rack-r10-01' }), site.racks['rack-r10-01'].nodes);
+  assert.equal(nodesUnder(site, w.owner, { targetKind: 'row', target: 'row-10' }).length, 128);
+  // Switch firmware (every row of the demo hall runs something, so the interlock refuses it there;
+  // the view's part is only to colour the switch once a lease is active).
+  const firmware = { ...item({ kind: 'switch_firmware', targetKind: 'part', target: 'sw-leaf-r3' }), status: 'active' as const };
+  assert.deepEqual([...softwareWork(site, w.owner, [firmware]).parts], ['sw-leaf-r3']);
+  assert.equal(softwareWork(site, w.owner, [{ ...firmware, status: 'granted' }]).parts.size, 0);
 });

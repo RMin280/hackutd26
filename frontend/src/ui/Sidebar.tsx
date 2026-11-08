@@ -14,6 +14,7 @@ const LEGEND: { swatch: string; text: string }[] = [
   { swatch: 'node-risk', text: 'At risk' },
   { swatch: 'node-failed', text: 'Failed' },
   { swatch: 'node-out', text: 'Out of service' },
+  { swatch: 'node-update', text: 'Software update' },
   { swatch: 'aisle-hot', text: 'Hot aisle' },
   { swatch: 'aisle-cold', text: 'Cold aisle' },
 ];

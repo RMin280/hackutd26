@@ -8,7 +8,7 @@ import { C, STATE_COLOR } from '../theme';
 import { label, partTypeName } from '../mock/site';
 import { stateText } from '../ui/format';
 import type { PartBox } from './layout';
-import { useUnprotectedParts } from './hooks';
+import { useSoftwareWork, useUnprotectedParts } from './hooks';
 import { inForeground } from './camera';
 
 const noRaycast = () => null;
@@ -47,13 +47,14 @@ function PartMesh({ id, box }: { id: string; box: PartBox }) {
   const select = useStore((s) => s.select);
   const setHover = useStore((s) => s.setHover);
   const unprotected = useUnprotectedParts().has(id);
+  const firmware = useSoftwareWork().parts.has(id); // a switch rebooting for a firmware upgrade
   const cause = useStore((s) => s.world.diagnosis?.cause === id);
   const canvas = useThree((s) => s.gl.domElement);
   const [hovered, setHovered] = useState(false);
 
   const type = site.parts[id].type;
   const [w, h, d] = box.size;
-  const capColor = state !== 'ok' ? STATE_COLOR[state] : unprotected ? C.gold : C.partCap;
+  const capColor = firmware ? C.update : state !== 'ok' ? STATE_COLOR[state] : unprotected ? C.gold : C.partCap;
   const body = selected || hovered ? C.partBodyHover : C.partBody;
 
   const bodyMesh = useRef<THREE.Mesh>(null!);
@@ -85,7 +86,7 @@ function PartMesh({ id, box }: { id: string; box: PartBox }) {
           canvas.style.cursor = 'pointer';
           setHover({
             label: label(id),
-            sub: `${partTypeName(type)} · ${stateText(state)}${unprotected ? ' · only working feed' : ''}`,
+            sub: `${partTypeName(type)} · ${firmware ? 'firmware update' : stateText(state)}${unprotected ? ' · only working feed' : ''}`,
             x: e.clientX,
             y: e.clientY,
           });
@@ -108,7 +109,7 @@ function PartMesh({ id, box }: { id: string; box: PartBox }) {
         <boxGeometry args={[w, 0.025, d]} />
         <meshBasicMaterial ref={capMat} color={capColor} toneMapped={false} transparent />
       </mesh>
-      {(unprotected || state !== 'ok') && <PulseRing size={box.size} color={state === 'failed' ? C.red : C.gold} />}
+      {(unprotected || state !== 'ok') && <PulseRing size={box.size} color={state === 'failed' ? C.red : firmware ? C.update : C.gold} />}
       {selected && <SelectionEdges size={box.size} />}
     </group>
   );
@@ -130,7 +131,7 @@ interface TagSpec {
   id: string;
   name: string;
   sub: string | null;
-  tone: 'red' | 'gold' | 'azure';
+  tone: 'red' | 'gold' | 'azure' | 'update';
   anchor: THREE.Vector3;
   priority: number;
 }
@@ -191,6 +192,7 @@ function PartTags({ layout }: { layout: Record<string, PartBox> }) {
   const cause = useStore((s) => s.world.diagnosis?.cause);
   const selected = useStore((s) => (s.selection?.kind === 'part' ? s.selection.id : null));
   const unprotected = useUnprotectedParts();
+  const firmware = useSoftwareWork().parts;
 
   // Callouts only where they help: problems, the unit a rack now depends on, and the selection.
   const specs = useMemo(() => {
@@ -204,14 +206,14 @@ function PartTags({ layout }: { layout: Record<string, PartBox> }) {
       out.push({
         id,
         name: label(id),
-        sub: state !== 'ok' ? stateText(state) : only ? 'Only working feed' : null,
-        tone: state === 'failed' ? 'red' : state !== 'ok' || only ? 'gold' : 'azure',
+        sub: firmware.has(id) ? 'Firmware update' : state !== 'ok' ? stateText(state) : only ? 'Only working feed' : null,
+        tone: state === 'failed' ? 'red' : firmware.has(id) ? 'update' : state !== 'ok' || only ? 'gold' : 'azure',
         anchor: tagAnchor(id, layout[id]),
         priority: selected === id ? 5 : state === 'failed' ? 4 : cause === id ? 3 : state !== 'ok' ? 2 : 1,
       });
     }
     return out.sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id));
-  }, [site, partState, cause, selected, unprotected, layout]);
+  }, [site, partState, cause, selected, unprotected, firmware, layout]);
 
   const [levels, setLevels] = useState<Record<string, TagLevel>>({});
   const current = useRef(levels);

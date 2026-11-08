@@ -72,8 +72,8 @@ The full contract (tables, reducers, rules) is in [`agents/README.md`](agents/RE
 | `page_resent` | what the page was about | `page`, `to`, `channel`, `first_sent` | dependency agent |
 | `approval_requested` | part | `approval`, `minutes`, `requested_for`, `summary` | fixer agent |
 | `escalated` | node, part, lease or feature | `to` (shift lead / scheduler agent) | an agent |
-| `agent_plan` | the issue's subject | `steps` (`tool`, `why`, `when`), `revision`, `change` | an agent |
-| `agent_step` | the issue's subject | none (the reason has the gist) | an agent |
+| `agent_plan` | the issue's subject | `steps` (`tool`, `why`, `when`), `revision`, `change`, `model`; `thinking` and `said` (the model's reasoning and words behind the reply, when its server returned them; also on `agent_step`) | an agent |
+| `agent_step` | the issue's subject | `thinking`, `said` when the model server returned them (the reason has the gist) | an agent |
 | `agent` | the issue's subject | `issue`, `status` (started/waiting/fixed/handed_off/failed_closed), `model_calls`, `served_by` | an agent |
 
 Every event also has `seq`, `time` (simulated minutes), `actor` and a one-line `reason`.

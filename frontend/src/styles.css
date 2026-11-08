@@ -20,6 +20,7 @@
   --ice: #c0d1f1;
   --gold: #ddb67c;
   --red: #e5534b;
+  --update: #a78bfa; /* software being changed; scene palette in src/theme.ts */
 
   --left: 248px;
   --right: 340px;
@@ -55,6 +56,7 @@ ol, ul { list-style: none; }
 .tone-red { color: var(--red); }
 .tone-azure { color: var(--azure); }
 .tone-ice { color: var(--ice); }
+.tone-update { color: var(--update); }
 .mark { display: inline-block; width: 6px; height: 6px; flex: none; background: currentColor; }
 
 /* Tabular figures only where numbers change or line up. IDs such as node-417 keep their
@@ -161,12 +163,13 @@ ol, ul { list-style: none; }
 .swatch-rack-warn { background: #2a2a2d; box-shadow: inset 0 3px 0 var(--gold); }
 .swatch-rack-bad { background: #2a2a2d; box-shadow: inset 0 3px 0 var(--red); }
 .swatch-protected { background: #2a2a2d; box-shadow: inset 0 3px 0 #2a6fae, inset 0 0 0 1px var(--azure); }
-.swatch-node-job, .swatch-node-safe, .swatch-node-risk, .swatch-node-failed, .swatch-node-out { height: 5px; }
+.swatch-node-job, .swatch-node-safe, .swatch-node-risk, .swatch-node-failed, .swatch-node-out, .swatch-node-update { height: 5px; }
 .swatch-node-job { background: #1d3b5e; }
 .swatch-node-safe { background: var(--ice); }
 .swatch-node-risk { background: var(--gold); }
 .swatch-node-failed { background: var(--red); }
 .swatch-node-out { background: #0f0f11; box-shadow: inset 0 0 0 1px var(--line-strong); }
+.swatch-node-update { background: var(--update); }
 .swatch-aisle-hot { background: rgba(221, 182, 124, 0.2); box-shadow: inset 0 0 0 1px #6f5a3c; }
 .swatch-aisle-cold { background: #0c131c; box-shadow: inset 0 0 0 1px #1b2c3f; }
 
@@ -323,6 +326,17 @@ ol, ul { list-style: none; }
 .fix-pop-lines li:last-child { color: var(--text-2); }
 .fix-pop-lines li.is-current { color: var(--text); }
 .fix-pop-lines li.is-current::after { content: '▍'; margin-left: 2px; color: var(--azure); animation: blink 1s steps(1) infinite; }
+.fix-pop-detail { display: block; margin-top: 2px; color: var(--text-3); }
+.fix-pop-lines li.is-current .fix-pop-detail { color: var(--text-2); }
+/* The model's own words and reasoning behind its newest reply: quiet, clipped to a few lines. */
+.fix-pop-mind { margin-top: 6px; padding: 6px 0 0 8px; border-left: 1px solid var(--line-strong); }
+.fix-pop-said { margin: 0; color: var(--text-2); }
+.fix-pop-thinking {
+  margin: 0; color: var(--text-3); font-style: italic;
+  display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; /* the label and four lines */
+}
+.fix-pop-said + .fix-pop-thinking { margin-top: 4px; }
+.fix-pop-mind-label { display: block; font-size: 10px; font-weight: 500; font-style: normal; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-3); margin-bottom: 1px; }
 .fix-pop-foot { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 11px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; }
 .fix-pop-spin { width: 9px; height: 9px; border: 1.5px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes blink { 50% { opacity: 0; } }

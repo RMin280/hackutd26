@@ -7,7 +7,7 @@
 // Pure: no React, no three.js. The view only renders the agents' own rows; nothing here decides.
 
 import type { ActorKind, DecisionEvent, FocusTarget } from '../model/types';
-import { modelOf } from '../ui/format';
+import { modelOf, saidOf, thinkingOf } from '../ui/format';
 
 /** The agents' rows that belong to a software fix. */
 export const SOFTWARE_FIX_TYPES: readonly string[] = ['agent_plan', 'agent_step', 'agent', 'notified', 'escalated'];
@@ -24,6 +24,9 @@ export type FixStatus = 'working' | 'waiting' | 'fixed' | 'handoff' | 'stopped';
 export interface FixLine {
   seq: number;
   text: string;
+  /** The row's reason, when it says more than the title: the model's words on its plan and its
+   * outcome, Squawk's on a verdict. */
+  detail?: string;
 }
 
 export interface Fix {
@@ -39,6 +42,10 @@ export interface Fix {
   last: number;
   /** Which model wrote the plan, from the plan row's data. */
   model?: string;
+  /** The model's reasoning behind its newest plan or step, when its server returned any. */
+  thinking?: string;
+  /** What the model said in words with that reply, if anything. */
+  said?: string;
 }
 
 export const MAX_LINES = 4;
@@ -94,6 +101,15 @@ export function softwareFixes(events: readonly DecisionEvent[], afterSeq = 0): F
       const m = modelOf(e);
       if (m) fix.model = m;
     }
+    if (e.type === 'agent_plan' || e.type === 'agent_step') {
+      // Each reply's reasoning replaces the last: the popup shows what it is thinking now.
+      const thinking = thinkingOf(e);
+      const said = saidOf(e);
+      if (thinking || said) {
+        fix.thinking = thinking;
+        fix.said = said;
+      }
+    }
     if (e.focus.kind !== 'overview') fix.focus = e.focus;
     fix.status = statusOf(e) ?? 'working';
     current.set(e.actor, fix);
@@ -102,7 +118,19 @@ export function softwareFixes(events: readonly DecisionEvent[], afterSeq = 0): F
 }
 
 function push(fix: Fix, e: DecisionEvent): void {
-  fix.lines.push({ seq: e.seq, text: e.title });
+  fix.lines.push({ seq: e.seq, text: e.title, detail: detailOf(e) });
   if (fix.lines.length > MAX_LINES) fix.lines.shift();
   fix.last = e.seq;
+}
+
+/**
+ * A row's reason when it adds to its title. The agents' outcome rows start with their status
+ * word ("FIXED: ..."), which the popup's footer already says, so that goes; a reason the title
+ * already states (a step's gist) is nothing new.
+ */
+export function detailOf(e: Pick<DecisionEvent, 'title' | 'reason'>): string | undefined {
+  const reason = e.reason.replace(/^([A-Z][A-Z ]*|Plan): /, '').trim();
+  const head = e.title.replace(/…$/, '').slice(0, 60); // a step's title is its reason, cut short
+  if (!reason || !head || reason.startsWith(head) || e.title.includes(reason)) return undefined;
+  return reason;
 }
