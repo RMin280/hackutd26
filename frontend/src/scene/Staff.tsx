@@ -1,19 +1,14 @@
-// Squawk's floor staff: chunky toy seagulls, in the spirit of the articulated pocket-pet prints,
-// waddling the aisles. Pure decoration: nothing reads their state, they take no clicks and they
-// never touch a decision. In a hot aisle they sweat and flap. Press G to hide or show them.
-// (The tech, in the azure hard hat, is the one gull that does a job: see Tech.tsx.)
+// The gull model for Squawk's floor tech (Tech.tsx): a chunky toy seagull, in the spirit of the
+// articulated pocket-pet prints. Only the tech is on the floor: every gull on screen is doing a
+// repair. In a hot aisle it sweats and flaps.
 //
 // Built from primitives in code. Each body segment is one merged geometry with vertex colours,
-// drawn instanced for the whole crew (a dozen draw calls for five gulls). The waddle is
-// procedural: short quick steps, the body rocking over the planted foot, a head bob and a tail wag.
+// drawn instanced (a dozen draw calls). The waddle is procedural: short quick steps, the body
+// rocking over the planted foot, a head bob and a tail wag.
 
-import { useEffect, useMemo } from 'react';
-import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { useStore } from '../store';
 import { C } from '../theme';
-import { AISLE, PAIR_COUNT, ROW_X0, ROW_X1, coldAisleZs, hotAisleZ } from './layout';
-import { inForeground } from './camera';
+import { AISLE, PAIR_COUNT, ROW_X0, ROW_X1, hotAisleZ } from './layout';
 import { walkerLists, type Walker } from './walkers';
 import { cone, cyl, merge, piece, sphere, type V3 } from './geo';
 import { standFacing, stepToward, type GullState } from './gait';
@@ -134,37 +129,7 @@ export interface GullDef {
   start: number; // 0..1 along the route
 }
 
-// The east walkway runs between the leaf switches and the spines; the west end of the hall is
-// lined with cooling units, so patrols go out along an aisle and come back the same way.
-const EAST_X = ROW_X1 + 2.8;
-const SOUTH = 0;
-const NORTH = Math.PI;
-
-function patrol(coldZ: number, hotZ: number, coldTurn: number, hotTurn: number, faceCold: number, faceHot: number, hotFirst = false): Waypoint[] {
-  const cold: Waypoint[] = [
-    { x: EAST_X, z: coldZ },
-    { x: ROW_X0 + coldTurn, z: coldZ, pause: 2.6, face: faceCold },
-    { x: EAST_X, z: coldZ, pause: 0.5 },
-  ];
-  const hot: Waypoint[] = [
-    { x: EAST_X, z: hotZ },
-    { x: ROW_X0 + hotTurn, z: hotZ, pause: 2.0, face: faceHot },
-    { x: EAST_X, z: hotZ, pause: 0.5 },
-  ];
-  return hotFirst ? [...hot, ...cold] : [...cold, ...hot];
-}
-
-const COLD = coldAisleZs();
 const HOT_Z = Array.from({ length: PAIR_COUNT }, (_, p) => hotAisleZ(p));
-
-// The north cold aisle (in front of Row 1) is left clear: it is where the camera looks during the demo.
-const GULLS: GullDef[] = [
-  { route: patrol(COLD[1], HOT_Z[0], 1.3, 1.0, NORTH, SOUTH), speed: 0.6, start: 0.62 },
-  { route: patrol(COLD[2], HOT_Z[1], 2.7, 1.5, SOUTH, NORTH, true), speed: 0.68, start: 0.18 },
-  { route: patrol(COLD[3], HOT_Z[2], 0.9, 2.4, NORTH, NORTH), speed: 0.55, start: 0.4 },
-  { route: patrol(COLD[4], HOT_Z[3], 1.9, 0.8, NORTH, SOUTH, true), speed: 0.72, start: 0.7 },
-  { route: patrol(COLD[5], HOT_Z[4], 3.3, 1.2, NORTH, SOUTH), speed: 0.63, start: 0.05 },
-];
 
 // ---------- the crew ----------
 
@@ -209,7 +174,7 @@ export interface Crew {
   gulls: GullState[];
   /** Where this crew is on the floor, for the hot-aisle doors (empty while hidden). */
   walkers: Walker[];
-  /** Walks the patrol routes. The tech walks its own (rounds.ts) and skips this. */
+  /** Walks the defs' routes. The tech walks its own (rounds.ts) and skips this. */
   advance: (dt: number) => void;
   /** `hide(x, z)` drops a gull from this frame, e.g. one waddling right past the lens. */
   pose: (t: number, dt: number, hide?: (x: number, z: number) => boolean) => void;
@@ -225,7 +190,7 @@ const tmpP = new THREE.Vector3();
 const tmpS = new THREE.Vector3();
 const ONE = new THREE.Vector3(1, 1, 1);
 
-export function buildCrew(defs: GullDef[] = GULLS, opts: CrewOptions = {}): Crew {
+export function buildCrew(defs: GullDef[], opts: CrewOptions = {}): Crew {
   const count = defs.length;
   const group = new THREE.Group();
   const disposables: { dispose: () => void }[] = [];
@@ -438,28 +403,4 @@ export function buildCrew(defs: GullDef[] = GULLS, opts: CrewOptions = {}): Crew
       for (const d of disposables) d.dispose();
     },
   };
-}
-
-const gullCenter = new THREE.Vector3();
-
-export function Staff() {
-  const show = useStore((s) => s.staff);
-  const camera = useThree((s) => s.camera);
-  const crew = useMemo(() => buildCrew(), []);
-  useEffect(() => {
-    camera.layers.enable(STAFF_LAYER);
-  }, [camera]);
-  useEffect(() => () => crew.dispose(), [crew]);
-  useFrame(({ clock, camera: cam, controls }, delta) => {
-    if (!show) {
-      crew.walkers.length = 0;
-      return;
-    }
-    const dt = Math.min(delta, 0.05);
-    crew.advance(dt);
-    // a gull waddling between the lens and the subject of a close shot steps out of the picture
-    const ctl = controls as Parameters<typeof inForeground>[1];
-    crew.pose(clock.elapsedTime, dt, (x, z) => inForeground(cam, ctl, gullCenter.set(x, 0.6, z), 0.4));
-  });
-  return <primitive object={crew.group} visible={show} />;
 }

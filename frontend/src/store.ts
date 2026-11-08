@@ -29,13 +29,14 @@ interface AppState {
   stepIndex: number; // -1 = before the first step
   world: World;
   events: DecisionEvent[];
+  /** Feed rows up to this seq were already there when the view connected (live mode's first sync); 0 on the mock. */
+  feedStart: number;
   caption: string;
   selection: Selection | null;
   hover: Hover | null;
   camera: CameraRequest;
   playing: boolean;
   follow: boolean;
-  staff: boolean; // the seagull crew walking the hall (decoration only)
   tech: boolean; // the tech gull on duty: walks to whatever is broken and repairs it (T)
   panels: Record<PanelName, boolean>; // true = open
 
@@ -51,7 +52,6 @@ interface AppState {
   overview: () => void;
   setHover: (h: Hover | null) => void;
   togglePanel: (p: PanelName) => void;
-  toggleStaff: () => void;
   toggleTech: () => void;
   /** Marks a failed or degraded node or part repaired. The mock does it here; live mode asks the backend. */
   repair: (target: RepairTarget) => void;
@@ -65,13 +65,13 @@ export const useStore = create<AppState>((set, get) => ({
   stepIndex: -1,
   world: initialWorld(site),
   events: [],
+  feedStart: 0,
   caption: INTRO_CAPTION,
   selection: null,
   hover: null,
   camera: { seq: 0, target: { kind: 'overview' } },
   playing: false,
   follow: true,
-  staff: true,
   tech: false,
   panels: { sidebar: true, feed: true, metrics: true, caption: true, legend: true },
 
@@ -161,7 +161,6 @@ export const useStore = create<AppState>((set, get) => ({
 
   setHover: (hover) => set({ hover }),
   togglePanel: (p) => set((s) => ({ panels: { ...s.panels, [p]: !s.panels[p] } })),
-  toggleStaff: () => set((s) => ({ staff: !s.staff })),
   toggleTech: () => set((s) => ({ tech: !s.tech })),
 
   repair: (target) => {

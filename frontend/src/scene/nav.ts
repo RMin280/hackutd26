@@ -17,7 +17,7 @@
 // spacetimedb/test/view-tech.test.ts.
 
 import type { Site } from '../model/types';
-import { HALL, RACK, nodeCenter, posX, rowFacing, rowZ, type PartBox } from './layout';
+import { AISLE, HALL, RACK, nodeCenter, posX, rowFacing, rowZ, type PartBox } from './layout';
 
 export const CELL = 0.15; // metres
 /** Half a gull's width, near enough: its centre keeps at least this far from equipment. */
@@ -345,17 +345,25 @@ export interface Spot {
 }
 
 /**
- * Where a tech can stand to work on something. A node is worked on from the aisle in front of
- * its rack, facing the panel. A facility part from any of its four sides; whichever is cheapest
- * to reach wins (a side tight against something else won't be walkable, and is skipped).
+ * Where a tech can stand to work on something. A node is a hardware repair at the back of the
+ * rack, so the tech goes into the hot aisle behind it (down the middle, the aisle is narrow) and
+ * faces the rear panel. A facility part from any of its four sides; whichever is cheapest to
+ * reach wins (a side tight against something else won't be walkable, and is skipped).
  */
 export function spotsFor(site: Site, layout: Record<string, PartBox>, r: Repair): Spot[] {
   if (r.kind === 'node') {
     const n = site.nodes[r.id];
     const rack = n && site.racks[n.rack];
     if (!rack) return [];
-    const f = rowFacing(n.row);
-    return [{ x: posX(rack.pos), z: rowZ(n.row) + f * (RACK.d / 2 + STAND), face: f < 0 ? 0 : Math.PI, work: nodeCenter(site, r.id, 1) }];
+    const back = -rowFacing(n.row); // the rear of the rack opens onto the hot aisle
+    return [
+      {
+        x: posX(rack.pos),
+        z: rowZ(n.row) + back * (RACK.d / 2 + Math.min(STAND, AISLE.hot / 2)),
+        face: back < 0 ? 0 : Math.PI,
+        work: nodeCenter(site, r.id, -1),
+      },
+    ];
   }
   const box = layout[r.id];
   if (!box) return [];

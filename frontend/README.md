@@ -19,7 +19,6 @@ npm run build      # typecheck + production build
 | `R` | Reset the scenario |
 | `Esc` | Close the card, then back to the overview |
 | `1` / `2` | Naive scheduler / Squawk mode |
-| `G` | Hide / show the seagull crew |
 | `T` | Put the tech on / off duty: it walks to each failure and repairs it (changes the hall: see below) |
 
 Moving around the hall (map-style): drag to pan along the floor, right-drag to rotate, scroll to zoom toward the cursor, `WASD` to move, `Q`/`E` to turn, hold `Shift` to go faster.
@@ -36,17 +35,21 @@ Close shots keep the subject clear: plain units standing in front of it fade to 
 
 ## The crew
 
-Squawk's floor staff are chunky toy seagulls in the spirit of the articulated pocket-pet prints: round body, big head, short orange bill, grey wings with black tips, stubby orange legs and flat webbed feet. They are built in code in `src/scene/Staff.tsx` (one merged geometry per body segment, instanced, matte filament shading) and they waddle: short quick steps, the body rocking over the planted foot, a head bob and a tail wag. They patrol the cold and hot aisles from the east walkway; in a hot aisle they sweat and flap. Decoration only: no clicks, no state the panels read, and they step out of any close shot they would block. They leave the cold aisle in front of Row 1 clear, because that is where the demo looks. `G` hides them.
+Squawk's floor tech is a chunky toy seagull in the spirit of the articulated pocket-pet prints: round body, big head, short orange bill, grey wings with black tips, stubby orange legs and flat webbed feet. It is built in code in `src/scene/Staff.tsx` (one merged geometry per body segment, instanced, matte filament shading) and it waddles: short quick steps, the body rocking over the planted foot, a head bob and a tail wag; in a hot aisle it sweats and flaps. Only gulls doing a repair are on the floor: there is no decorative crew.
 
 Each hot aisle has sliding doors at both ends (`src/scene/Doors.tsx`): two leaves that slide apart along the rack ends when a gull comes near and close again once it has passed.
 
 ### The tech
 
-One gull has a job: the tech, in an azure hard hat, waiting at its post between the spines on the east side. Press `T` to put it on duty. It walks to the nearest failed or degraded node or part, works on it for a few seconds (pecking away, a ring at its feet filling up, sparks off the part), marks it repaired, then walks to the nearest one left; with nothing left it goes back to its post. `T` again calls it off, even mid-repair.
+The tech wears an azure hard hat and waits waiting at its post between the spines on the east side. Press `T` to put it on duty. It walks to the nearest failed or degraded node or part (hardware: a node is worked on from the hot aisle behind its rack, at the rear panel), works on it for a few seconds (pecking away, a ring at its feet filling up, sparks off the part), marks it repaired, then walks to the nearest one left; with nothing left it goes back to its post. `T` again calls it off, even mid-repair.
 
 - **Routes** (`src/scene/nav.ts`): the floor is a grid of 15 cm cells; racks and equipment are obstacles, grown by a gull's half-width, and cells close to equipment cost more, so routes keep to the middle of aisles and only take a hot aisle when that saves a lot. One run of Dijkstra's algorithm from where the gull stands gives the cheapest route to every reachable cell, so "nearest" means nearest on foot (a row of racks is usually in the way) and the route comes from the same run. The cell path is then pulled taut into a few straight legs. The planned route shows as azure dots on the floor.
 - **Order**: each time, the nearest repair left; that's not always the shortest tour of all of them, but it adapts as failures come and go.
 - **Repairs change the hall.** They go through the store's `repair` action: on the mock, `src/mock/repair.ts` sets the part or node back to ok; live, the backend's `set_part_state` / `set_node_state`, which records a row in the decision feed like any other state change. Repairing CDU-3 early changes the story: before the diagnosis, node-417's failure comes out isolated instead of a shared cause; before the cooling agent's request, CDU-4 is still refused (the protection lease) but no longer as the racks' last cooling feed. So put the tech on duty once that request has been refused, or on the diagnostics test bed. Its rounds are in `src/scene/rounds.ts`, tested with the planner in `../spacetimedb/test/view-tech.test.ts`.
+
+### Software fixes
+
+Software fixes have no one to walk to: while the Nemotron fixer agent works on one, a popup over what it is about (the node's rack, the part, the racks of a job or lease) shows its plan, each step as it happens and how it ended (`src/scene/FixerPopups.tsx`, grouped in `src/scene/fixes.ts`, tested in `../spacetimedb/test/view-fixes.test.ts`). They are the fixer's own rows in the decision feed (`agent_plan`, `agent_step`, `agent`, `notified`, `escalated`); `tech_dispatched` is hardware and left to the tech. A finished fix stays up for about 7 s. Rows that were already in the feed when the view connected don't pop up.
 
 Every server panel carries two tiny LEDs at its right-hand end, a steady power light and an activity light that blinks in its own rhythm. Job nodes blink most, spares hardly at all, failed nodes go dark. They are a twinkle in close-ups and invisible from the overview.
 
@@ -58,7 +61,7 @@ NMC² palette: black surfaces, azure `#2b9cfc` for the product acting (selection
 
 | Path | What |
 | --- | --- |
-| `src/scene/` | three.js scene: hall layout, racks + nodes (instanced), facility parts, aisles and containment, feed arcs, protection frames, camera shots and controls, the seagull crew (`Staff.tsx`), the tech (`Tech.tsx`, its rounds in `rounds.ts`, routes in `nav.ts`) |
+| `src/scene/` | three.js scene: hall layout, racks + nodes (instanced), facility parts, aisles and containment, feed arcs, protection frames, camera shots and controls, the gull model (`Staff.tsx`), the tech (`Tech.tsx`, its rounds in `rounds.ts`, routes in `nav.ts`), the fixer's popups (`FixerPopups.tsx`) |
 | `src/ui/` | HUD panels over the full-screen scene: sidebar, stat tiles, decision feed, detail card |
 | `src/store.ts` | App state. The only place data enters the view |
 | `src/model/types.ts` | Shapes the view consumes (site, world, events) |

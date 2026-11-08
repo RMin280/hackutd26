@@ -110,10 +110,11 @@ function sync(): void {
   }
   const sc = toScenario(t.scenario[0]);
   const s = useStore.getState();
+  const events = toEvents(t.decision);
   const patch: Partial<AppState> = {
     site,
     world: toWorld(t, site),
-    events: toEvents(t.decision),
+    events,
     mode: sc.mode,
     stepIndex: sc.stepIndex,
     caption: sc.caption,
@@ -130,6 +131,8 @@ function sync(): void {
     }
     if (sc.stepIndex >= stepCount(sc.mode) - 1) patch.playing = false;
   }
+  // What was in the feed before the view connected is history (no fixer popups for it).
+  if (seenVersion === null) patch.feedStart = events[0]?.seq ?? 0;
   seenVersion = sc.version;
   useStore.setState(patch);
 }

@@ -1,4 +1,4 @@
-// Where the gulls are right now, on the floor. Each crew (the patrolling gulls, the tech) keeps
+// Where the gulls are right now, on the floor. Each crew (today just the tech) keeps
 // its own list and rewrites it every frame; the hot-aisle doors read them all to know when to
 // open. A list is empty while its crew is hidden.
 

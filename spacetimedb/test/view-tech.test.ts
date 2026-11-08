@@ -9,7 +9,7 @@ import { initialWorld } from '../../frontend/src/mock/scenario';
 import { buildSite } from '../../frontend/src/mock/site';
 import type { PartState, World } from '../../frontend/src/model/types';
 import type { GullState } from '../../frontend/src/scene/gait';
-import { buildPartLayout, coldAisleZs, HALL } from '../../frontend/src/scene/layout';
+import { buildPartLayout, coldAisleZs, HALL, hotAisleZ } from '../../frontend/src/scene/layout';
 import {
   BODY,
   CELL,
@@ -143,25 +143,26 @@ test('routes keep the gull clear of racks and equipment', () => {
   }
 });
 
-test('a node is worked on from the aisle in front of its rack, facing it', () => {
+test('a node is a hardware repair: worked on from the hot aisle behind its rack, facing it', () => {
   const [spot] = spotsFor(site, layout, { kind: 'node', id: 'node-417' }); // rack-r1-12, Row 1 faces north
-  const north = coldAisleZs()[0];
-  assert.ok(Math.abs(spot.z - north) < 0.5, 'in the cold aisle north of Row 1');
-  assert.equal(spot.face, 0, 'facing south, at the rack');
+  assert.ok(Math.abs(spot.z - hotAisleZ(0)) < 0.05, 'in the hot aisle between Rows 1 and 2');
+  assert.equal(spot.face, Math.PI, 'facing north, at the back of the rack');
+  assert.ok(standable(hall, [spot]).length === 1, 'a gull fits there');
 });
 
 test('nearest means nearest on foot, not as the crow flies', () => {
-  // In the cold aisle between Rows 2 and 3: a Row 1 rack is just across Row 2 as the crow
-  // flies, but on foot it is round the end of the row. A Row 3 rack at the far end of this same
-  // aisle is farther in a straight line and much nearer to walk to.
-  const from = { x: 2, z: coldAisleZs()[1] };
-  const across: Repair = { kind: 'node', id: firstNode('rack-r1-12') };
-  const along: Repair = { kind: 'node', id: firstNode('rack-r3-01') };
+  // In the hot aisle between Rows 1 and 2, mid-row: a Row 3 rack is just across Row 2 and the
+  // next cold aisle as the crow flies, but on foot it is out of this aisle and round the end of
+  // the rows. A Row 1 rack at the far end of this same aisle is farther in a straight line and
+  // much nearer to walk to.
+  const from = { x: 0.93, z: hotAisleZ(0) };
+  const across: Repair = { kind: 'node', id: firstNode('rack-r3-10') };
+  const along: Repair = { kind: 'node', id: firstNode('rack-r1-01') };
   const crow = (r: Repair) => {
     const [s] = spotsFor(site, layout, r);
     return Math.hypot(s.x - from.x, s.z - from.z);
   };
-  assert.ok(crow(across) < crow(along), 'Row 1 is nearer as the crow flies');
+  assert.ok(crow(across) < crow(along), 'Row 3 is nearer as the crow flies');
 
   const pick = planRoute(hall, from, [
     { tag: across, spots: spotsFor(site, layout, across) },
@@ -169,7 +170,7 @@ test('nearest means nearest on foot, not as the crow flies', () => {
   ]);
   assert.equal(pick?.tag, along);
   const walkAcross = planRoute(hall, from, [{ tag: across, spots: spotsFor(site, layout, across) }])!;
-  assert.ok(routeLength([from, ...walkAcross.points]) > 1.5 * routeLength([from, ...pick!.points]), 'going round Row 2 is a long way');
+  assert.ok(routeLength([from, ...walkAcross.points]) > 1.5 * routeLength([from, ...pick!.points]), 'going round the rows is a long way');
 });
 
 test('planning a route is quick enough to do whenever the hall changes', () => {

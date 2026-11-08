@@ -1,4 +1,4 @@
-// How a gull gets about: the kinematics the patrolling crew and the tech share. Turn toward
+// How a gull gets about: the tech's kinematics. Turn toward
 // where you're going, then waddle there; slow right down while still turning. Pure maths (no
 // three.js), so the tech's route-following can be tested in Node.
 

@@ -108,8 +108,6 @@ function useKeys() {
         s.setMode('naive');
       } else if (e.key === '2') {
         s.setMode('squawk');
-      } else if (e.key === 'g' || e.key === 'G') {
-        s.toggleStaff();
       } else if (e.key === 't' || e.key === 'T') {
         s.toggleTech();
       }

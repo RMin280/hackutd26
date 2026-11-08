@@ -291,6 +291,27 @@ ol, ul { list-style: none; }
   padding: 4px 8px; background: rgba(10, 10, 11, 0.92); border: 1px solid var(--line-strong);
   font: 500 12px/16px 'Roboto', 'Inter', sans-serif; color: var(--text);
 }
+/* The Nemotron fixer at work on a software fix (scene/FixerPopups.tsx). */
+.fix-pop {
+  width: 260px; padding: 8px 10px 9px; background: rgba(10, 10, 11, 0.94);
+  border: 1px solid var(--line-strong); border-left: 2px solid var(--azure);
+  font: 400 12px/16px 'Roboto', 'Inter', sans-serif; color: var(--text);
+  animation: rise 0.3s ease-out; transition: opacity 0.4s;
+}
+.fix-pop-handoff, .fix-pop-stopped { border-left-color: var(--gold); }
+.fix-pop-head { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.fix-pop-agent { font-size: 11px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--azure); }
+.fix-pop-subject { font-size: 11px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fix-pop-lines li { color: var(--text-3); padding-left: 10px; position: relative; animation: rise 0.3s ease-out; }
+.fix-pop-lines li::before { content: ''; position: absolute; left: 0; top: 7px; width: 4px; height: 1px; background: currentColor; }
+.fix-pop-lines li:last-child { color: var(--text-2); }
+.fix-pop-lines li.is-current { color: var(--text); }
+.fix-pop-lines li.is-current::after { content: '▍'; margin-left: 2px; color: var(--azure); animation: blink 1s steps(1) infinite; }
+.fix-pop-foot { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 11px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; }
+.fix-pop-spin { width: 9px; height: 9px; border: 1.5px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+
 .scene-tag-sub { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; }
 
 .tooltip { position: fixed; z-index: 50; pointer-events: none; padding: 6px 9px; background: var(--surface-solid); border: 1px solid var(--line-strong); }
