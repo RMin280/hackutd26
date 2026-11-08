@@ -12,8 +12,9 @@ from typing import Any
 
 from ..common.playbook import COMMON_TOOLS, Playbook, Run, Tool, events_by, text_param
 from ..squawk import Blocker, fmt_time
-from .fleet import COMPONENTS, Advisory, Fleet
+from .fleet import COMPONENTS, Advisory, Fleet, patch_note
 from .rollout import MAX_WAVE, Exposure, book_wave, exposure, plan_wave
+from .triage import MAX_ATTEMPTS
 
 SHIFT_LEAD = "shift lead"
 
@@ -198,6 +199,165 @@ PLAYBOOKS: dict[str, Playbook] = {
 }
 
 
+# ---------------------------------------------------------------- a failed install
+#
+# Code has already held the target out of service (a hold window) and halted the advisory's
+# rollout. The model reads the check, then picks: retry once, roll back to the old version, or
+# hand off. Code fixes the target, both versions and the number of tries; Squawk checks the window.
+
+HOLD_MIN = 120  # how long a failed target is held out of service while it waits for a decision
+
+
+def _fail_ctx(run: Run) -> tuple[Advisory, Fleet, str, str, str]:
+    x = run.extra
+    return x["advisory"], x["fleet"], x["component"], x["target"], x["version"]
+
+
+def _check_target(run: Run, args: dict[str, Any]) -> dict[str, Any]:
+    adv, fleet, component, target, version = _fail_ctx(run)
+    comp = COMPONENTS[component]
+    tries = fleet.attempt(component, target, version)
+    head = f"{target}: {comp.label} {version} failed after attempt {tries} of {MAX_ATTEMPTS}"
+    out: dict[str, Any] = {
+        "target": target,
+        "attempts_used": tries,
+        "retry_allowed": tries < MAX_ATTEMPTS,
+        "rollback_to": run.facts["previous_version"],
+    }
+    if run.extra.get("hold"):  # our own hold would make any what-if overlap; the swap is checked when it's booked
+        until = fmt_time(run.extra["hold_until"])
+        out.update(held_until=until, reason=f"{head}; held out of service until {until}. A retry or rollback replaces the hold, and Squawk checks that window.")
+        return out
+    check = run.br.simulate_work(run.actor, comp.kind, target)
+    run.last_check = check.verdict
+    out.update(window_verdict=check.verdict, reason=f"{head}; a new window would be {check.verdict}: {check.reason}")
+    return out
+
+
+def _rebook(run: Run, note: str, why: str) -> dict[str, Any]:
+    """Swap the hold for a real window, right away so the target is never free in between.
+    A refused window puts the hold back."""
+    adv, fleet, component, target, version = _fail_ctx(run)
+    comp = COMPONENTS[component]
+    hold = run.extra.get("hold")
+    if hold:
+        run.br.release_lease(run.actor, hold, why)
+        run.extra["hold"] = None
+    d = run.br.request_work(run.actor, comp.kind, target, minutes=comp.minutes, note=note)
+    if not d.granted or not d.lease:
+        if comp.scope == "node":
+            back = run.br.request_work(run.actor, comp.kind, target, minutes=HOLD_MIN, note=patch_note(adv, component, version, "kept out of service after a failed install", kind="hold"))
+            run.extra["hold"] = back.lease.id if back.granted and back.lease else None
+        return {"ok": False, "granted": False, "verdict": d.verdict, "reason": d.reason, "earliest_safe": d.earliest_safe}
+    run.extra["waits"] = [Blocker("lease_ends", d.lease.id, d.lease.end)]
+    run.extra["booked_fix"] = True
+    return {"ok": True, "granted": True, "lease": d.lease.id, "window_ends": fmt_time(d.lease.end), "reason": d.reason}
+
+
+def _retry_patch(run: Run, args: dict[str, Any]) -> dict[str, Any]:
+    adv, fleet, component, target, version = _fail_ctx(run)
+    out = _rebook(run, patch_note(adv, component, version, args.get("note", "")), "retrying the install")
+    run.extra["chose"] = "retry"
+    return out
+
+
+def _roll_back(run: Run, args: dict[str, Any]) -> dict[str, Any]:
+    adv, fleet, component, target, version = _fail_ctx(run)
+    out = _rebook(run, patch_note(adv, component, run.facts["previous_version"], args.get("note", ""), kind="rollback"), "rolling back")
+    run.extra["chose"] = "rollback"
+    return out
+
+
+def _tell_lead_about_failure(run: Run, args: dict[str, Any]) -> dict[str, Any]:
+    run.br.notify(run.actor, SHIFT_LEAD, run.issue.subject, args["message"])
+    run.extra["lead_told"] = True
+    return {"ok": True}
+
+
+def _lead_needed(run: Run) -> bool:
+    """A failed canary, and any rollback, is the shift lead's to know about."""
+    if run.extra.get("lead_told") or run.facts.get("shift_lead_told"):
+        return False
+    return bool(run.facts.get("canary")) or run.extra.get("chose") == "rollback"
+
+
+def _wait_for_fix(run: Run, args: dict[str, Any]) -> dict[str, Any]:
+    run.status, run.blockers = "waiting", tuple(run.extra["waits"])
+    run.summary = args.get("note") or "Checked again when the window ends."
+    return {"ok": True, "reason": "Checked again when the window ends."}
+
+
+def _after_fix_booked(run: Run) -> str | None:
+    if not run.extra.get("booked_fix"):
+        return "only after retry_patch or roll_back booked a window"
+    if _lead_needed(run):
+        return "only after notify_shift_lead (a failed canary or a rollback)"
+    return None
+
+
+FAILURE_TOOLS: dict[str, Tool] = {
+    **{
+        t.name: t
+        for t in (
+            Tool(
+                "check_target",
+                "Read where the failed target stands: tries used and left, the version a rollback restores, and Squawk's verdict on a new window.",
+                _check_target,
+            ),
+            Tool(
+                "retry_patch",
+                f"Install the same fix on the same target again, in a new window checked by Squawk. At most {MAX_ATTEMPTS} tries per target.",
+                _retry_patch,
+                {"note": text_param("One line for the work note: why a retry should work.")},
+                acts=True,
+                needs=("check_target",),
+                gate=lambda run: None if run.extra["fleet"].attempt(run.extra["component"], run.extra["target"], run.extra["version"]) < MAX_ATTEMPTS else f"only within {MAX_ATTEMPTS} tries (they're used up: roll back or escalate)",
+            ),
+            Tool(
+                "roll_back",
+                "Put the version the target ran before back on, in a window checked by Squawk. The target works again but stays exposed to the advisory until a person plans the fix.",
+                _roll_back,
+                {"note": text_param("One line for the work note.")},
+                acts=True,
+                needs=("check_target",),
+            ),
+            Tool(
+                "notify_shift_lead",
+                "Tell the shift lead about this failure: required for a failed canary and for any rollback.",
+                _tell_lead_about_failure,
+                {"message": text_param("One or two plain sentences: which target, what failed, and what you did.")},
+                ("message",),
+                acts=True,
+                offered=lambda run: not run.facts.get("shift_lead_told"),
+            ),
+            Tool(
+                "keep_waiting",
+                "End this run until the retry or rollback window ends; code checks the result then.",
+                _wait_for_fix,
+                {"note": text_param("One line on what it waits for.")},
+                gate=_after_fix_booked,
+            ),
+        )
+    },
+    "escalate": COMMON_TOOLS["escalate"],
+}
+
+PLAYBOOKS["patch_failed"] = Playbook(
+    "patch_failed",
+    "A patch window ended and the post-install check failed on one target. Code has already held it out of service "
+    "and halted the advisory's rollout. Decide what to do with that one target: check_target first, then either "
+    f"retry_patch (same fix again; at most {MAX_ATTEMPTS} tries per target, so only when retry_allowed is true and the "
+    "symptom looks like it could pass a second time) or roll_back (back to the version it ran before: it works again but "
+    "stays exposed to the advisory). Tell the shift lead with notify_shift_lead if this was the canary wave or you roll back. "
+    "Done means: end with keep_waiting once a retry or rollback window is booked (code checks the result when it ends), "
+    "or escalate if neither fits.",
+    ("check_target", "retry_patch", "roll_back", "notify_shift_lead", "keep_waiting", "escalate"),
+    ("check_target",),
+    frozenset({"roll_back", "notify_shift_lead", "keep_waiting", "escalate"}),  # keep_waiting still needs a booked window
+    lambda run: "a retry or rollback still has to be booked and checked",
+)
+
+
 JOB_PREFIX = "scheduler for "
 
 
@@ -214,4 +374,4 @@ def told(e, actor: str, advisory_id: str) -> str | None:
     return to[len(JOB_PREFIX):] if to.startswith(JOB_PREFIX) else to
 
 
-__all__ = ["PLAYBOOKS", "TOOLS", "events_by", "recipient", "told"]
+__all__ = ["FAILURE_TOOLS", "HOLD_MIN", "PLAYBOOKS", "TOOLS", "events_by", "recipient", "told"]

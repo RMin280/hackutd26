@@ -26,6 +26,9 @@ from ..squawk import Event
 DATA = Path(__file__).with_name("data")
 VERSION = re.compile(r"[\w+-]+(?:\.[\w+-]+)*")
 TAG = re.compile(rf"^patch (?P<adv>[\w.-]+): (?P<component>\w+) (?P<version>{VERSION.pattern})")
+ROLLBACK = re.compile(rf"^rollback (?P<adv>[\w.-]+): (?P<component>\w+) (?P<version>{VERSION.pattern})")
+HOLD = re.compile(r"^hold (?P<adv>[\w.-]+): ")
+CANARY_SIZE = {"node": 2, "row": 1, "leaf": 1}  # the first wave of a fix (rollout.CANARY)
 log = logging.getLogger(__name__)
 
 
@@ -107,13 +110,45 @@ def load_advisories(path: Path = DATA / "advisories.json") -> list[Advisory]:
     return sorted(out, key=lambda a: (-a.exploited, -order[a.severity], -a.cvss, a.id))  # worst first
 
 
+@dataclass(frozen=True)
+class Fault:
+    """A simulated install fault: the first `fails` windows bringing `component` on `target` to
+    `version` end with the post-install check failing. Stands in for fleet management's health
+    check after a patch (DCIM / Redfish / the node's own agent in production)."""
+
+    component: str
+    version: str
+    target: str
+    fails: int
+    symptom: str  # what the check reports: untrusted text, fenced before the model sees it
+
+
+@dataclass(frozen=True)
+class Window:
+    """One of our own windows on a target: a patch attempt or a rollback."""
+
+    seq: int
+    kind: Literal["patch", "rollback"]
+    version: str
+    start: int
+    until: int
+    lease: str
+
+
+# What a target's last window says, once read against the clock.
+Status = Literal["running", "ok", "failed", "rolling_back", "rolled_back"]
+
+
 @dataclass
 class Fleet:
     rows: tuple[int, ...]
     baseline: dict[str, dict[int, str]]  # component -> row -> version
     actor: str = "update-agent"
-    patched: dict[tuple[str, str], tuple[str, int]] = field(default_factory=dict)  # (component, target) -> (version, done at)
+    faults: dict[tuple[str, str, str], Fault] = field(default_factory=dict)  # (component, target, version) -> fault
+    history: dict[tuple[str, str], list[Window]] = field(default_factory=dict)  # (component, target) -> our windows, oldest first
     leases: dict[str, tuple[tuple[str, str], int]] = field(default_factory=dict)  # lease id -> (key, ends)
+    holds: dict[str, tuple[str, int, int]] = field(default_factory=dict)  # target -> (lease, start, ends): kept out after a failure
+    order: dict[tuple[str, str], list[str]] = field(default_factory=dict)  # (component, version) -> targets in booking order
 
     @classmethod
     def load(cls, path: Path = DATA / "inventory.json", actor: str = "update-agent") -> "Fleet":
@@ -123,52 +158,140 @@ class Fleet:
             name: {r: str(spec.get("rows", {}).get(str(r), spec["default"])) for r in rows}
             for name, spec in raw["components"].items()
         }
-        return cls(rows, base, actor)
+        faults = {}
+        for f in raw.get("install_faults", []):
+            fault = Fault(str(f["component"]), str(f["version"]), str(f["target"]), int(f.get("fails", 1)), str(f.get("symptom", ""))[:300])
+            faults[(fault.component, fault.target, fault.version)] = fault
+        return cls(rows, base, actor, faults)
 
     def observe(self, e: Event) -> None:
-        """Our own granted patch windows, from the feed. A window counts once it has ended."""
-        if e.type == "lease_released":  # ended early or cancelled before its window ran: not patched
-            got = self.leases.get(str(e.data.get("lease") or e.subject))
+        """Our own granted windows, from the feed. A window counts once it has ended."""
+        if e.type == "lease_released":  # ended early or cancelled before its window ran: it didn't happen
+            lease = str(e.data.get("lease") or e.subject)
+            got = self.leases.pop(lease, None)
             if got and e.time < got[1]:
-                self.patched.pop(got[0], None)
+                self.history[got[0]] = [w for w in self.history.get(got[0], []) if w.lease != lease]
+                if not self.history[got[0]]:
+                    del self.history[got[0]]
+            for target, (held, _, _) in list(self.holds.items()):
+                if held == lease:
+                    del self.holds[target]
             return
         # Our own windows: booked by us, or approved by a shift lead for us (the holder is us).
         holder = e.data.get("holder", e.actor)
         if e.type != "lease_granted" or holder != self.actor:
             return
-        m = TAG.match(str(e.data.get("note") or ""))
-        if m and m["component"] in COMPONENTS:
-            key, until = (m["component"], str(e.data.get("target"))), int(e.data.get("until") or 0)
-            self.patched[key] = (m["version"], until)
-            if e.data.get("lease"):
-                self.leases[str(e.data["lease"])] = (key, until)
+        note, target = str(e.data.get("note") or ""), str(e.data.get("target"))
+        start, until, lease = int(e.data.get("start") or e.time), int(e.data.get("until") or 0), str(e.data.get("lease") or "")
+        if HOLD.match(note):
+            self.holds[target] = (lease, start, until)
+            return
+        m = TAG.match(note) or ROLLBACK.match(note)
+        if not m or m["component"] not in COMPONENTS:
+            return
+        key = (m["component"], target)
+        kind = "rollback" if note.startswith("rollback ") else "patch"
+        self.history.setdefault(key, []).append(Window(e.seq, kind, m["version"], start, until, lease))
+        if kind == "patch":
+            seen = self.order.setdefault((m["component"], m["version"]), [])
+            if target not in seen:
+                seen.append(target)
+        if lease:
+            self.leases[lease] = (key, until)
+
+    # ---- what a target runs
+
+    def status(self, component: str, target: str, now: int) -> Status | None:
+        """What our last window on a target says at `now`; None when we never booked one."""
+        windows = self.history.get((component, target))
+        if not windows:
+            return None
+        last = windows[-1]
+        if last.kind == "rollback":
+            return "rolling_back" if last.until > now else "rolled_back"
+        if last.until > now:
+            return "running"
+        return "failed" if self.attempt(component, target, last.version, now) <= self._fails(component, target, last.version) else "ok"
+
+    def attempt(self, component: str, target: str, version: str, now: int | None = None) -> int:
+        """Patch windows booked to bring a target to `version` (ended by `now`, when given)."""
+        return sum(1 for w in self.history.get((component, target), []) if w.kind == "patch" and w.version == version and (now is None or w.until <= now))
+
+    def _fails(self, component: str, target: str, version: str) -> int:
+        f = self.faults.get((component, target, version))
+        return f.fails if f else 0
+
+    def symptom(self, component: str, target: str, version: str) -> str:
+        f = self.faults.get((component, target, version))
+        return f.symptom if f else "the post-install check failed"
+
+    def last_window(self, component: str, target: str) -> Window | None:
+        windows = self.history.get((component, target))
+        return windows[-1] if windows else None
 
     def version(self, component: str, row: int, target: str, now: int) -> str:
-        """The version on a target (node, row-N or leaf) in a row, at time `now`."""
+        """The version on a target (node, row-N or leaf) in a row, at time `now`. A failed or
+        rolled-back window leaves the version it found."""
         base = self.baseline.get(component, {}).get(row, "0")
         for key in ((component, target), (component, f"row-{row}")):
-            got = self.patched.get(key)
-            if got and got[1] <= now and not older(got[0], base):
-                base = got[0]
+            if self.status(*key, now) == "ok":
+                got = self.history[key][-1].version
+                if not older(got, base):
+                    base = got
         return base
 
     def scheduled(self, component: str, target: str) -> bool:
-        """A patch window for it is booked (running, done or still to come)."""
-        return (component, target) in self.patched
+        """A window for it is booked (running, done or still to come)."""
+        return (component, target) in self.history
 
     def in_flight(self, adv: "Advisory", now: int) -> list[tuple[str, int]]:
         """Our windows for this advisory's fix (or its prerequisites) that haven't ended: (lease, until)."""
         wanted = {adv.component: adv.fixed, **adv.requires}
         out = []
         for lease, (key, until) in self.leases.items():
-            got = self.patched.get(key)
-            if until > now and got and key[0] in wanted and got[0] == wanted[key[0]]:
+            windows = self.history.get(key)
+            last = windows[-1] if windows else None
+            if until > now and last and last.lease == lease and key[0] in wanted and last.version == wanted[key[0]]:
                 out.append((lease, until))
         return out
 
+    def later_windows(self, target: str, now: int) -> list[str]:
+        """Our patch windows on a target that haven't started yet (any component): cancelled when an earlier one fails."""
+        return [w.lease for (c, t), ws in self.history.items() if t == target for w in ws if w.kind == "patch" and w.start > now and w.lease]
+
+    def held(self, target: str, now: int) -> tuple[str, int] | None:
+        """Our hold on a target, if one covers `now`: (lease, ends)."""
+        got = self.holds.get(target)
+        return (got[0], got[2]) if got and got[1] <= now < got[2] else None
+
     def booked(self, component: str, version: str) -> int:
-        """Windows ever booked to bring a component to a version (canary done once this is > 0)."""
-        return sum(1 for (c, _), (v, _) in self.patched.items() if c == component and v == version)
+        """Targets ever booked to bring a component to a version (canary done once this is > 0)."""
+        return len(self.order.get((component, version), []))
+
+    def canary(self, component: str, version: str, target: str) -> bool:
+        """The target was in the first wave of this fix."""
+        return target in self.order.get((component, version), [])[: CANARY_SIZE[COMPONENTS[component].scope]]
+
+    def failures(self, adv: "Advisory", now: int) -> list[tuple[str, str]]:
+        """(component, target) of this advisory (its fix or a prerequisite) whose last window failed.
+        Walks only the targets we booked, never the hall."""
+        wanted = {adv.component: adv.fixed, **adv.requires}
+        return [
+            key
+            for key, ws in self.history.items()
+            if key[0] in wanted and ws[-1].version == wanted[key[0]] and self.status(*key, now) == "failed"
+        ]
+
+    def broken(self, adv: "Advisory", target: str, now: int) -> Status | None:
+        """A target this advisory's rollout must leave alone: its fix or a prerequisite failed, is
+        being rolled back, or was rolled back (left for a person)."""
+        for comp in (adv.component, *adv.requires):
+            st = self.status(comp, target, now)
+            if st in ("failed", "rolling_back", "rolled_back"):
+                return st
+            if st == "running" and self.attempt(comp, target, self.history[(comp, target)][-1].version) > 1:
+                return "failed"  # a retry is running: still the failure's, not a new wave's
+        return None
 
     def affected_rows(self, adv: Advisory) -> list[int]:
         """Rows whose baseline is older than the fix: the version groups to look at."""
@@ -176,9 +299,10 @@ class Fleet:
         return [r for r in self.rows if older(base.get(r, "0"), adv.fixed)]
 
 
-def patch_note(adv: Advisory, component: str, version: str, extra: str = "") -> str:
-    """The note on every booking: a fixed tag the fleet reads back, then free text."""
-    tag = f"patch {adv.id}: {component} {version}"
+def patch_note(adv: Advisory, component: str, version: str, extra: str = "", kind: str = "patch") -> str:
+    """The note on every booking: a fixed tag the fleet reads back, then free text.
+    kind: patch | rollback (back to `version`) | hold (kept out of service after a failure)."""
+    tag = f"{kind} {adv.id}: {component} {version}"
     return f"{tag}. {extra}".strip()[:400] if extra else tag
 
 

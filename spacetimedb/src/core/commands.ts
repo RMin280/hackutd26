@@ -1185,7 +1185,9 @@ export function recordEvent(s: Store, identity: string, type: string, subject: s
               ? `Stopped on ${name}: failed closed`
               : status === 'waiting'
                 ? `Waiting on ${name}`
-                : `Working on ${name}`;
+                : status === 'patch_failed' // the update agent: a post-install check failed (agents/patch)
+                  ? `Patch failed on ${name}`
+                  : `Working on ${name}`;
       verdict = status === 'fixed' ? 'fixed' : status === 'handed_off' ? 'handoff' : status === 'failed_closed' ? 'warn' : 'info';
       break;
     }

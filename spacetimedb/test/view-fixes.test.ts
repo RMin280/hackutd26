@@ -107,3 +107,27 @@ test("the model's thinking and words ride along, newest reply first; a row's rea
   assert.equal(detailOf({ title: 'Working on node-12', reason: 'Taking broken_node. node-12 is a free spare that failed.' }), 'Taking broken_node. node-12 is a free spare that failed.');
   assert.equal(detailOf({ title: 'Row 3 patched', reason: '' }), undefined);
 });
+
+test("a failed install gets its own popup over the node: held, retried, then fixed or rolled back", () => {
+  const upd = (p: Partial<DecisionEvent>) => row({ actor: 'update-agent', actorKind: 'updater', subject: 'node-1029', focus: { kind: 'node', id: 'node-1029' }, ...p });
+  const rows = [
+    upd({ type: 'agent', subject: 'SQK-SIM-2026-0412', focus: { kind: 'overview' }, title: 'Waiting on SQK-SIM-2026-0412' }),
+    upd({ type: 'agent', title: 'Patch failed on node-1029', reason: 'GPU driver 550.90.07 failed its post-install check on node-1029 (attempt 1)' }),
+    upd({ type: 'lease_granted', verdict: 'allow', title: 'node-1029 held' }), // the hold joins the failure, not the advisory
+    upd({ type: 'agent_plan', verdict: 'plan', title: 'Plan for node-1029: check_target → retry_patch → keep_waiting' }),
+    upd({ type: 'lease_granted', verdict: 'allow', title: 'Retry window on node-1029' }),
+    upd({ type: 'agent', title: 'Working on node-1029' }),
+  ];
+  const fixes = softwareFixes(newestFirst(rows));
+  assert.deepEqual(fixes.map((f) => [f.subject, f.status]), [
+    ['SQK-SIM-2026-0412', 'waiting'],
+    ['node-1029', 'working'],
+  ]);
+  assert.ok(fixes[1].lines.some((l) => l.text === 'Retry window on node-1029'));
+  assert.ok(!fixes[0].lines.some((l) => l.text === 'node-1029 held'));
+
+  const fixed = softwareFixes(newestFirst([...rows, upd({ type: 'agent', verdict: 'fixed', title: 'Fixed node-1029' })]));
+  assert.equal(fixed[1].status, 'fixed');
+  const rolled = softwareFixes(newestFirst([...rows, upd({ type: 'agent', verdict: 'handoff', title: 'Handed off node-1029' })]));
+  assert.equal(rolled[1].status, 'handoff');
+});

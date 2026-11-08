@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..squawk import Blocker, Squawk
-from .fleet import COMPONENTS, Advisory, Fleet, older, patch_note
+from .fleet import CANARY_SIZE, COMPONENTS, Advisory, Fleet, older, patch_note
 
 def spare_reserve() -> int:
     """Free healthy spares a node-level wave never dips below (PATCH_SPARE_RESERVE)."""
@@ -33,7 +33,7 @@ def spare_reserve() -> int:
 
 
 MAX_WAVE = 16
-CANARY = {"node": 2, "row": 1, "leaf": 1}
+CANARY = CANARY_SIZE
 APPROVAL = "shift lead approval"  # parked owner for a request that came back warn
 
 
@@ -57,7 +57,9 @@ class Exposure:
     under_repair: int = 0
     parked: dict[str, int] = field(default_factory=dict)  # owner -> targets Squawk refused for them
     scheduled: int = 0  # targets with a patch window booked (done, running or to come)
-    total: int = 0  # vulnerable targets left, including held and parked
+    failed: list[str] = field(default_factory=list)  # the install failed: the failure's own run handles them
+    rolled_back: list[str] = field(default_factory=list)  # back on the old version, left for a person
+    total: int = 0  # vulnerable targets left, including held, parked, failed and rolled back
 
     def summary(self) -> dict[str, Any]:
         return {
@@ -66,6 +68,8 @@ class Exposure:
             "refused_for_owners": dict(self.parked),
             "under_repair": self.under_repair,
             "already_scheduled": self.scheduled,
+            "failed_installs": len(self.failed),
+            "rolled_back": len(self.rolled_back),
             "still_vulnerable": self.total,
         }
 
@@ -84,7 +88,9 @@ def exposure(adv: Advisory, fleet: Fleet, br: Squawk, parked: dict[str, str] | N
             if not older(fleet.version(adv.component, row, t, now), adv.fixed):
                 continue
             ex.total += 1
-            if fleet.scheduled(adv.component, t):
+            if _broken(adv, fleet, t, now, ex):
+                pass
+            elif fleet.scheduled(adv.component, t):
                 ex.scheduled += 1
             elif t in parked:
                 ex.parked[parked[t]] = ex.parked.get(parked[t], 0) + 1
@@ -95,7 +101,9 @@ def exposure(adv: Advisory, fleet: Fleet, br: Squawk, parked: dict[str, str] | N
             if not older(fleet.version(adv.component, row, n.id, now), adv.fixed):
                 continue
             ex.total += 1
-            if fleet.scheduled(adv.component, n.id):
+            if _broken(adv, fleet, n.id, now, ex):
+                pass
+            elif fleet.scheduled(adv.component, n.id):
                 ex.scheduled += 1
             elif n.owner.kind != "free":
                 ex.held[n.owner.id] = ex.held.get(n.owner.id, 0) + 1
@@ -107,6 +115,15 @@ def exposure(adv: Advisory, fleet: Fleet, br: Squawk, parked: dict[str, str] | N
                 ex.ready.append((n.id, row))
     ex.total -= ex.scheduled
     return ex
+
+
+def _broken(adv: Advisory, fleet: Fleet, target: str, now: int, ex: Exposure) -> bool:
+    """A failed or rolled-back target is never waved again: counted apart, still vulnerable."""
+    st = fleet.broken(adv, target, now)
+    if st is None:
+        return False
+    (ex.rolled_back if st == "rolled_back" else ex.failed).append(target)
+    return True
 
 
 def room_for_spares(br: Squawk) -> int:

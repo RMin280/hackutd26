@@ -61,6 +61,13 @@ The storyline has one issue of each type, two handoffs, and a technician report 
 - **Halt on refusal:** a wave stops at the first booking refused because of another window instead of repeating the refusal.
 - **Urgent advisories** (critical or exploited) always reach the shift lead; online live patches (the monitoring agent) roll out alongside running jobs.
 
+**Failed installs (`triage.triage_failure`, the `patch_failed` playbook).** A patch window can end with the post-install check failing. In the simulation, `data/inventory.json` → `install_faults` lists those checks: the canary node-1029's GPU driver fails once, and node-1037's fails twice. In production this is fleet management's health check. What happens next:
+- **Code first, no model:** the agent says what failed in a row titled "Patch failed on node-…". It cancels that node's later windows (a driver after a failed firmware update) and holds the node out of service with a 2-hour `sw_exclusive` window, so it is never offered as a spare. The advisory's rollout is halted: no new wave while a failure is open.
+- **Nemotron chooses** between `retry_patch` (the same fix again, at most 2 tries per target, enforced in code), `roll_back` (the version the node ran before: it works again but stays exposed) and `escalate`. Each choice swaps the hold for a window Squawk checks; a refused window puts the hold back. Code requires telling the shift lead about a failed canary or any rollback before the run can end with `keep_waiting`. The model never picks the target or a version, and the symptom text is fenced as untrusted.
+- **Code reads the result** when the window ends. A pass resumes the rollout. A rollback leaves the node to a person. A rolled-back canary, or 2 rollbacks, stops the advisory and hands it to the shift lead.
+- The view's popup follows it over the node (`frontend/src/scene/fixes.ts`): failure → hold → plan → retry or rollback → Fixed or Handed off. `python -m agents.patch --mock --scripted` plays the whole story.
+- Not modelled: a failed online (row) or switch upgrade is retried or rolled back the same way but isn't held, because holding a whole row or a switch is a person's call.
+
 **Nemotron's part** is the same plan → execute → done-check loop as the fixer (`agents/common/`): it plans each wave, picks the wave size, writes the notices, and chooses to wait or finish. It never picks a target. Code refuses `keep_waiting` until the owners and (when needed) the shift lead are told, and refuses "finished" while anything patchable is left. Advisory text is untrusted and fenced. About 6 model calls per wave, roughly $0.003 on Nemotron 3 Super.
 
 ```

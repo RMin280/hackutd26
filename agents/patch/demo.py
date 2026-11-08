@@ -1,6 +1,8 @@
 """The update agent's storyline on the simulated hall: three advisories (a critical, exploited
 monitoring-agent flaw; a GPU driver fix that needs newer BMC firmware first; a leaf switch
-OS fix), rolled out in waves while job-train-1 trains, then the job finishes."""
+OS fix), rolled out in waves while job-train-1 trains, then the job finishes. Two driver
+installs fail their post-install check (inventory.json's install_faults): the canary node-1029
+passes on a retry, and node-1037 fails twice and is rolled back for a person."""
 
 from __future__ import annotations
 
@@ -18,6 +20,9 @@ STORY: tuple[tuple[int, str, Callable[[MockSquawk], None]], ...] = (
     (250, "Later waves end.", lambda br: None),
     (400, "job-train-1 finishes; its nodes return to the pool.", lambda br: br.set_job_status(JOB_ID, "finished")),
     (600, "Everything booked so far has run.", lambda br: None),
+    (760, "The second driver wave has ended.", lambda br: None),
+    (860, "The retry window on node-1037 has ended.", lambda br: None),
+    (960, "The rollback window has ended.", lambda br: None),
 )
 
 

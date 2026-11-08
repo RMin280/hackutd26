@@ -1,10 +1,54 @@
 {
   "note": "Simulated software inventory for the demo hall, by row (one version per row and component; a per-node change comes from Squawk's feed once a patch window ends). Production imports this from fleet management (DCIM / Redfish / the scheduler's node facts) and flags drift.",
-  "rows": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+  "rows": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10
+  ],
   "components": {
-    "monitoring_agent": {"default": "4.1.9"},
-    "gpu_driver": {"default": "550.90.07", "rows": {"9": "550.54.15", "10": "550.54.15"}},
-    "bmc_firmware": {"default": "3.4.0", "rows": {"9": "3.1.2", "10": "3.1.2"}},
-    "leaf_os": {"default": "10.4.2"}
-  }
+    "monitoring_agent": {
+      "default": "4.1.9"
+    },
+    "gpu_driver": {
+      "default": "550.90.07",
+      "rows": {
+        "9": "550.54.15",
+        "10": "550.54.15"
+      }
+    },
+    "bmc_firmware": {
+      "default": "3.4.0",
+      "rows": {
+        "9": "3.1.2",
+        "10": "3.1.2"
+      }
+    },
+    "leaf_os": {
+      "default": "10.4.2"
+    }
+  },
+  "install_faults_note": "Simulated post-install checks that fail (fleet management's health check after a patch window, in production). fails = how many windows in a row fail; the next one passes. A rollback always restores the old version.",
+  "install_faults": [
+    {
+      "component": "gpu_driver",
+      "version": "550.90.07",
+      "target": "node-1029",
+      "fails": 1,
+      "symptom": "After the reboot the GPU kernel module did not load (the driver build against the running kernel failed); the node never rejoined the pool."
+    },
+    {
+      "component": "gpu_driver",
+      "version": "550.90.07",
+      "target": "node-1037",
+      "fails": 2,
+      "symptom": "The driver loads, but the post-install GPU check fails: an 8-GPU all-reduce test hangs on GPU 3."
+    }
+  ]
 }

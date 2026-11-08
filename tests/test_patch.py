@@ -29,6 +29,10 @@ def ours(br: MockSquawk, type: str = "lease_granted") -> list[Event]:
     return [e for e in br.events if e.type == type and e.actor == UPDATER]
 
 
+def granted(target: str, note: str, *, until: int, start: int = 0, lease: str = "lease-x", seq: int = 1) -> Event:
+    return Event(seq, start, "lease_granted", UPDATER, target, "", {"note": note, "target": target, "start": start, "until": until, "holder": UPDATER, "lease": lease})
+
+
 def drain(r: PatchRunner, times: int = 3) -> None:
     for _ in range(times):
         r.drain()
@@ -89,7 +93,7 @@ def test_first_wave_is_a_canary_then_waves_grow():
     br, fleet = MockSquawk(), Fleet.load()
     first = plan_wave(GPU, fleet, br, 16, exposure(GPU, fleet, br))
     assert first.canary and len(first.targets) == 2
-    fleet.patched[("gpu_driver", first.targets[0])] = ("550.90.07", 0)
+    fleet.observe(granted(first.targets[0], patch_note(GPU, "gpu_driver", "550.90.07"), until=0))
     later = plan_wave(GPU, fleet, br, 16, exposure(GPU, fleet, br))
     assert not later.canary and len(later.targets) == 16
 
@@ -172,10 +176,11 @@ def test_a_restarted_agent_rebuilds_from_the_feed_and_tells_nobody_twice():
     drain(PatchRunner(br, ScriptedModel(), [MON, GPU], Fleet.load()))
     br.advance(200)
     drain(PatchRunner(br, ScriptedModel(), [MON, GPU], Fleet.load()))  # a new process
-    told = [(e.subject, e.data["to"]) for e in ours(br, "notified")]
+    told = [(e.subject, e.data["to"]) for e in ours(br, "notified") if e.subject.startswith("SQK-")]  # not the failed canary node
     assert len(told) == len(set(told)) == 2  # the shift lead about the critical one, tenant-gamma about the driver
     mon = [e for e in ours(br) if e.data.get("kind") == "sw_online"]
-    assert [len(x) for x in ([mon[0]], mon[1:])] == [1, 8]  # canary row, then a wave of 8: not a second canary
+    # canary row, then a wave (not a second canary); row-9 waits behind the hold on the failed canary node-1029
+    assert len(mon) == 8 and mon[0].time == 0 and all(e.time == 200 for e in mon[1:])
 
 
 def test_the_agent_finishes_once_every_target_is_patched():
@@ -254,3 +259,99 @@ def test_a_restart_mid_wave_waits_for_the_running_wave():
     br.advance(160)
     drain(second)
     assert len(ours(br)) > booked  # the next waves go once the running ones have ended
+
+
+# ---------------------------------------------------------------- failed installs
+
+
+def faulty(tmp_path, *faults: dict[str, Any]) -> Fleet:
+    """The demo inventory with its install faults replaced."""
+    from agents.patch.fleet import DATA
+
+    raw = json.loads((DATA / "inventory.json").read_text())
+    raw["install_faults"] = list(faults)
+    path = tmp_path / "inventory.json"
+    path.write_text(json.dumps(raw))
+    return Fleet.load(path)
+
+
+def held_by_us(br: MockSquawk, node: str) -> bool:
+    return any(lease.actor == UPDATER for lease in br.leases_on(node))
+
+
+def test_a_failed_window_leaves_the_old_version_and_a_retry_or_rollback_is_read_back():
+    fleet = Fleet.load()
+
+    def drv(kind: str = "patch", v: str = "550.90.07") -> str:
+        return patch_note(GPU, "gpu_driver", v, kind=kind)
+
+    fleet.observe(granted("node-1029", drv(), until=90, lease="l1", seq=1))
+    assert fleet.status("gpu_driver", "node-1029", 50) == "running"
+    assert fleet.status("gpu_driver", "node-1029", 90) == "failed"  # inventory: node-1029 fails its first install
+    assert fleet.version("gpu_driver", 9, "node-1029", 90) == "550.54.15"
+    assert fleet.failures(GPU, 90) == [("gpu_driver", "node-1029")]
+    assert fleet.canary("gpu_driver", "550.90.07", "node-1029")
+    fleet.observe(granted("node-1029", drv(), start=100, until=190, lease="l2", seq=2))
+    assert fleet.broken(GPU, "node-1029", 150) == "failed"  # a running retry is still the failure's
+    assert fleet.status("gpu_driver", "node-1029", 190) == "ok" and fleet.version("gpu_driver", 9, "node-1029", 190) == "550.90.07"
+    fleet.observe(granted("node-1037", drv(), until=90, lease="l3", seq=3))
+    fleet.observe(granted("node-1037", drv("rollback", "550.54.15"), start=100, until=190, lease="l4", seq=4))
+    assert fleet.status("gpu_driver", "node-1037", 190) == "rolled_back" and fleet.broken(GPU, "node-1037", 190) == "rolled_back"
+    assert fleet.attempt("gpu_driver", "node-1037", "550.90.07") == 1  # a rollback isn't a try
+
+
+def test_the_storyline_retries_the_canary_and_rolls_back_a_node_that_fails_twice():
+    br, runner = run_demo(ScriptedModel(), out=lambda s: None)
+    agent = ours(br, "agent")
+    fixed = [e for e in agent if e.subject == "node-1029" and e.data.get("status") == "fixed"]
+    rolled = [e for e in agent if e.subject == "node-1037" and e.reason.startswith("ROLLED BACK")]
+    assert len(fixed) == 1 and "attempt 2" in fixed[0].reason
+    assert len(rolled) == 1 and "550.54.15" in rolled[0].reason
+    assert [e.data["attempt"] for e in agent if e.data.get("status") == "patch_failed"] == [1, 1, 2]
+    lead = {e.subject for e in ours(br, "notified") if e.data.get("to") == "shift lead"}
+    assert {"node-1029", "node-1037"} <= lead  # the failed canary, and the rollback
+    assert "SQK-SIM-2026-0412" not in runner.stopped  # one rollback outside the canary doesn't stop the advisory
+    assert runner.fleet.version("gpu_driver", 9, "node-1037", br.now) == "550.54.15"
+    # No new driver wave while node-1029's failure was open (from its failure row to its fix row).
+    failed_at = next(e.seq for e in agent if e.subject == "node-1029" and e.data.get("status") == "patch_failed")
+    driver = {f"node-{n}" for n in range(1028, 1281)} - {"node-1029"}
+    assert not [e for e in ours(br) if failed_at < e.seq < fixed[0].seq and e.subject in driver and "gpu_driver" in str(e.data.get("note"))]
+
+
+def test_a_failed_node_is_held_out_of_service_until_a_person_or_a_window_takes_over(tmp_path):
+    br = MockSquawk()
+    fleet = faulty(tmp_path, {"component": "gpu_driver", "version": "550.90.07", "target": "node-1029", "fails": 1, "symptom": "x"})
+    r = PatchRunner(br, DownModel(), [GPU], fleet)
+    r.fleet.observe(granted("node-1029", patch_note(GPU, "gpu_driver", "550.90.07"), until=90, lease="pre", seq=0))
+    br.advance(100)
+    drain(r)  # the model is down: the failure run fails closed, but code already holds the node
+    assert held_by_us(br, "node-1029") and "node-1029" not in {n.id for n in br.free_spares()}
+    assert any(o.issue.kind == "patch_failed" and o.status == "failed_closed" for o in r.outcomes)
+
+
+def test_a_rolled_back_canary_stops_the_advisory_for_a_person(tmp_path):
+    br = MockSquawk()
+    fleet = faulty(tmp_path, {"component": "gpu_driver", "version": "550.90.07", "target": "node-1029", "fails": 5, "symptom": "x"})
+    r = PatchRunner(br, ScriptedModel(), [GPU], fleet)
+    for t in (0, 160, 260, 360, 460, 560):
+        br.advance(t)
+        drain(r)
+    assert "SQK-SIM-2026-0412" in r.stopped
+    assert any(e.subject == "SQK-SIM-2026-0412" and "Stopped the rollout" in e.reason for e in ours(br, "escalated"))
+    tries = [e for e in ours(br) if e.subject == "node-1029" and str(e.data.get("note", "")).startswith("patch ") and "gpu_driver" in e.data["note"]]
+    assert len(tries) == 2  # the first try and one retry, never a third
+    assert {e.subject for e in ours(br) if "gpu_driver" in str(e.data.get("note"))} == {"node-1028", "node-1029"}  # never past the canary
+
+
+def test_a_third_try_is_refused_by_code_whatever_the_model_asks(tmp_path):
+    from agents.patch.playbooks import FAILURE_TOOLS
+
+    fleet = faulty(tmp_path)
+    for i in (1, 2):
+        fleet.observe(granted("node-1029", patch_note(GPU, "gpu_driver", "550.90.07"), start=i * 100, until=i * 100 + 90, lease=f"t{i}", seq=i))
+
+    class R:  # just what the gate reads
+        extra = {"fleet": fleet, "component": "gpu_driver", "target": "node-1029", "version": "550.90.07"}
+
+    assert "used up" in FAILURE_TOOLS["retry_patch"].gate(R())  # type: ignore[arg-type]
+    assert not {"target", "node", "version"} & set(FAILURE_TOOLS["roll_back"].schema()["function"]["parameters"]["properties"])

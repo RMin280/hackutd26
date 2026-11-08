@@ -51,3 +51,51 @@ def triage(adv: Advisory, fleet: Fleet, br: Squawk, parked: dict[str, str], told
     }
     note = f"{adv.title}\n{adv.summary}".strip()
     return Issue(f"vulnerable_software:{adv.id}:{br.now}", "vulnerable_software", adv.id, br.now, reason, facts, untrusted_note=note)
+
+
+# ---------------------------------------------------------------- a failed install
+
+MAX_ATTEMPTS = 2  # windows per target and version: the first try and one retry; then roll back
+
+
+def row_of(target: str, br: Squawk) -> int:
+    """The row a target (node, row-N or sw-leaf-rN) sits in."""
+    if target.startswith("row-"):
+        return int(target[4:])
+    if target.startswith("sw-leaf-r"):
+        return int(target[9:])
+    return br.node(target).row
+
+
+def triage_failure(adv: Advisory, fleet: Fleet, br: Squawk, component: str, target: str, *, lead_told: bool, others: int) -> Issue:
+    """A patch window ended with the post-install check failing. Always an issue: the target is
+    held out of service and this advisory's rollout is halted until it is resolved. Code fixes the
+    target, the versions and how many tries are left; the model picks retry, roll back or hand off."""
+    comp = COMPONENTS[component]
+    version = {adv.component: adv.fixed, **adv.requires}[component]
+    tries = fleet.attempt(component, target, version)
+    previous = fleet.baseline.get(component, {}).get(row_of(target, br), "0")
+    canary = fleet.canary(component, version, target)
+    reason = (
+        f"{comp.label} {version} failed its post-install check on {target} (attempt {tries} of {MAX_ATTEMPTS})"
+        + (", in the canary wave" if canary else "")
+        + f". {target} is held out of service and the rollout of {adv.id} is halted until this is resolved."
+    )
+    facts = {
+        **describe(adv),
+        "target": target,
+        "failed_component": comp.label,
+        "version_tried": version,
+        "previous_version": previous,
+        "attempts_used": tries,
+        "max_attempts": MAX_ATTEMPTS,
+        "retry_allowed": tries < MAX_ATTEMPTS,
+        "canary": canary,
+        "other_failed_or_rolled_back": others,
+        "rollout_halted": True,
+        "held_out_of_service": comp.scope == "node",
+        "shift_lead_told": lead_told,
+        "must_tell_shift_lead": not lead_told and (canary or tries >= MAX_ATTEMPTS),
+    }
+    note = fleet.symptom(component, target, version)
+    return Issue(f"patch_failed:{target}:{version}:{tries}", "patch_failed", target, br.now, reason, facts, untrusted_note=note)

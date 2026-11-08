@@ -26,7 +26,7 @@ import { buildGrid, planRoute, type NavGrid, type Option, type Point, type Repai
 /** Its post: on the east side, between the two spines, facing the hall. */
 export const POST: Spot = { x: ROW_X1 + 3.7, z: hotAisleZ(2), face: -Math.PI / 2, work: [ROW_X1 + 2.7, 1, hotAisleZ(2)] };
 
-export const TECH_SPEED = 1.25; // m/s: a brisk waddle, quicker than the patrols
+export const TECH_SPEED = 2.5; // m/s: a hurried waddle, twice the old pace and well ahead of the patrols
 export const WORK_TIME = 4; // seconds per repair
 /** Once it has asked for a repair, it leaves that one alone this long while the world catches up. */
 export const RETRY_AFTER = 10;

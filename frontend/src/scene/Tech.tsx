@@ -1,8 +1,10 @@
 // The tech on screen (its behaviour is in rounds.ts): a gull in an azure hard hat, the route it
 // has planned as azure dots on the floor (eaten up as it walks), a ring at its feet that fills
-// while it works, and sparks off whatever it is fixing. T puts it on and off duty.
+// while it works, and sparks off whatever it is fixing. T puts it on and off duty. When it picks
+// up a new repair it squawks in a speech bubble over its head for a few seconds.
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Html } from '@react-three/drei';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useStore } from '../store';
@@ -151,6 +153,10 @@ function buildFx(): Fx {
 
 const center = new THREE.Vector3();
 
+/** How long the "Squawk!" bubble stays up after it picks a repair, in seconds. */
+const SQUAWK_TIME = 3;
+const BUBBLE_HEIGHT = 1.35; // metres above the floor, over the hard hat
+
 export function Tech({ layout, doors }: { layout: Record<string, PartBox>; doors: Airlock }) {
   const site = useStore((s) => s.site);
   const camera = useThree((s) => s.camera);
@@ -180,6 +186,12 @@ export function Tech({ layout, doors }: { layout: Record<string, PartBox>; doors
     });
   }, [site, layout, crew, office]);
 
+  // The speech bubble: set when it picks a new repair, cleared after SQUAWK_TIME.
+  const [squawk, setSquawk] = useState<string | null>(null); // a key, so each one pops in fresh
+  const bubble = useRef<THREE.Group>(null);
+  const lastJob = useRef<string | null>(null);
+  const squawkUntil = useRef(0);
+
   useEffect(() => {
     camera.layers.enable(STAFF_LAYER);
   }, [camera]);
@@ -201,12 +213,34 @@ export function Tech({ layout, doors }: { layout: Record<string, PartBox>; doors
     const busy = tech.phase === 'working' || tech.phase === 'turning';
     crew.pose(t, dt, busy ? undefined : (x, z) => inForeground(cam, ctl, center.set(x, 0.6, z), 0.4));
     fx.update(tech, t, dt);
+
+    // A new repair picked up: squawk about it.
+    const job = tech.job;
+    const key = job ? `${job.kind}:${job.id}` : null;
+    if (key !== lastJob.current) {
+      lastJob.current = key;
+      if (job) {
+        setSquawk(`${key}@${t}`);
+        squawkUntil.current = t + SQUAWK_TIME;
+      }
+    }
+    if (squawk && t > squawkUntil.current) setSquawk(null);
+    bubble.current?.position.set(tech.gull.x, BUBBLE_HEIGHT, tech.gull.z);
   });
 
   return (
     <>
       <primitive object={crew.group} />
       <primitive object={fx.group} />
+      <group ref={bubble}>
+        {squawk && (
+          <Html center zIndexRange={[3, 0]} pointerEvents="none">
+            <div key={squawk} className="tech-squawk">
+              Squawk!
+            </div>
+          </Html>
+        )}
+      </group>
     </>
   );
 }
