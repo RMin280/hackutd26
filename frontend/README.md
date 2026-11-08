@@ -24,9 +24,15 @@ Moving around the hall (map-style): drag to pan along the floor, right-drag to r
 
 Click any rack, node or facility part (CDU, chiller, PDU, UPS, switchgear, utility, leaf, spine) to fly to it and open its card; click empty floor to close the card. Click a decision in the feed to jump to what it's about. Clicking a step in the sidebar jumps straight to it.
 
+Every panel collapses with its chevron: the sidebar and the decision feed fold into thin rails (the rail keeps play, next and reset), the metrics row and the narration fold away, and the legend has its own toggle. When the free space changes, the camera re-frames the current view unless you have moved it yourself.
+
 ## The hall
 
-Rows pair up back-to-back around an enclosed hot aisle (warm glass roof and end doors); cold aisles with perforated tiles run between the pairs. Odd rows face north, even rows face south. Racks stay graphite while healthy: a faint green strip on each face means full backup, and amber or red lids mark racks one failure from an outage or with no working feed. Blue frames mark racks protected by a lease.
+Rows pair up back-to-back around an enclosed hot aisle (warm glass roof and end doors); cold aisles with perforated tiles run between the pairs. Odd rows face north, even rows face south. Racks stay graphite while healthy: a faint blue strip on each face means full backup, and gold or red lids mark racks one failure from an outage or with no working feed. Azure frames mark racks protected by a lease; pale-blue server panels are a safe restart placement.
+
+## Design system
+
+NMC² palette: black surfaces, azure `#2b9cfc` for the product acting (selection, protection, primary action), pale blue `#c0d1f1` for safe placements, sand gold `#ddb67c` for reduced backup, and red only for failures. Healthy states stay neutral. Type is Roboto (loaded from Google Fonts, with bundled Inter as the offline fallback) at weights 300, 400 and 500, on a 11 / 12 / 13 / 17 / 20 / 28 px scale. Surfaces are square and flush to the screen edges; only controls get a 2 px radius. The only gradients are the two scrims that keep text legible over the 3D scene.
 
 ## Where things are
 

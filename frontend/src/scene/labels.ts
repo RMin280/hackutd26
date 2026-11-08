@@ -4,10 +4,10 @@
 import { useEffect, useState } from 'react';
 import * as THREE from 'three';
 
-const FONT_FAMILY = 'Inter, system-ui, sans-serif';
+const FONT_FAMILY = 'Roboto, Inter, system-ui, sans-serif';
 const fontsReady: Promise<unknown> =
   typeof document !== 'undefined' && document.fonts
-    ? Promise.all([document.fonts.load(`600 96px Inter`), document.fonts.load(`700 96px Inter`)]).catch(() => undefined)
+    ? Promise.all([document.fonts.load('500 96px Roboto'), document.fonts.load('500 96px Inter')]).then(() => document.fonts.ready).catch(() => undefined)
     : Promise.resolve();
 
 export function useFontsReady(): boolean {
@@ -23,7 +23,7 @@ export function useFontsReady(): boolean {
 }
 
 /** White text on transparent; tint it with the material colour. */
-export function makeTextTexture(text: string, weight = 600, letterSpacing = 0.12): { texture: THREE.CanvasTexture; aspect: number } {
+export function makeTextTexture(text: string, weight = 500, letterSpacing = 0.14): { texture: THREE.CanvasTexture; aspect: number } {
   const px = 96;
   const font = `${weight} ${px}px ${FONT_FAMILY}`;
   const canvas = document.createElement('canvas');
@@ -54,23 +54,19 @@ export function makeLockTexture(): THREE.CanvasTexture {
   const c = document.createElement('canvas');
   c.width = c.height = 128;
   const g = c.getContext('2d')!;
-  g.fillStyle = 'rgba(76,141,255,0.22)';
-  g.beginPath();
-  g.roundRect(8, 8, 112, 112, 28);
-  g.fill();
-  g.strokeStyle = '#7aa8ff';
+  g.fillStyle = 'rgba(43,156,252,0.2)';
+  g.fillRect(10, 10, 108, 108);
+  g.strokeStyle = '#2b9cfc';
   g.lineWidth = 9;
-  g.lineCap = 'round';
+  g.lineCap = 'butt';
   g.beginPath();
   g.arc(64, 54, 16, Math.PI, 0);
   g.lineTo(80, 64);
   g.moveTo(48, 54);
   g.lineTo(48, 64);
   g.stroke();
-  g.fillStyle = '#7aa8ff';
-  g.beginPath();
-  g.roundRect(37, 62, 54, 38, 8);
-  g.fill();
+  g.fillStyle = '#2b9cfc';
+  g.fillRect(37, 62, 54, 38);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 8;

@@ -1,20 +1,17 @@
 import type { ReactNode } from 'react';
 import { useStore } from '../store';
 import { label } from '../mock/site';
-import { IconBriefcase, IconLock, IconServer, IconShield } from './Icons';
 import type { Tone } from './format';
 
-function Tile(props: { icon: ReactNode; iconTone: string; title: string; value: ReactNode; detail: ReactNode; detailTone: Tone }) {
+// Four facts in one typographic row, divided by hairlines. No cards, no icons.
+function Metric({ name, value, detail, tone }: { name: string; value: ReactNode; detail: ReactNode; tone: Tone }) {
   return (
-    <div className="panel tile">
-      <div className="tile-head">
-        <span className={`icon-tile ${props.iconTone}`}>{props.icon}</span>
-        <span className="tile-title">{props.title}</span>
-      </div>
-      <div className="tile-value">{props.value}</div>
-      <div className="tile-detail">
-        <span className={`dot tone-${props.detailTone}`} />
-        <span className={`tone-text-${props.detailTone}`}>{props.detail}</span>
+    <div className="metric">
+      <div className="eyebrow">{name}</div>
+      <div className="metric-value">{value}</div>
+      <div className={`metric-detail tone-${tone}`}>
+        {tone !== 'ok' && tone !== 'muted' && <span className="mark" aria-hidden />}
+        {detail}
       </div>
     </div>
   );
@@ -33,17 +30,16 @@ export function StatTiles() {
   const d = world.diagnosis;
   const activeLeases = world.leases.filter((l) => world.now < l.end);
   const protection = activeLeases.find((l) => l.type === 'protection');
+  const naiveCrash = mode === 'naive' && job.crashes > 0;
 
   return (
-    <div className="tiles">
-      <Tile
-        icon={<IconServer />}
-        iconTone="it-green"
-        title="Racks at full backup"
+    <div className="metrics">
+      <Metric
+        name="Racks at full backup"
         value={
           <>
             {levels.green}
-            <span className="tile-of"> / {total}</span>
+            <span className="metric-of">/{total}</span>
           </>
         }
         detail={
@@ -53,38 +49,28 @@ export function StatTiles() {
               ? `${levels.yellow} one failure from an outage`
               : 'Every rack has a backup'
         }
-        detailTone={levels.red ? 'red' : levels.yellow ? 'amber' : 'green'}
+        tone={levels.red ? 'red' : levels.yellow ? 'gold' : 'ok'}
       />
-      <Tile
-        icon={<IconBriefcase />}
-        iconTone="it-blue"
-        title={job.id}
+      <Metric
+        name={job.id}
         value={job.status === 'running' ? 'Running' : 'Stopped'}
         detail={`${job.nodes.toLocaleString()} nodes · ${job.crashes} ${job.crashes === 1 ? 'crash' : 'crashes'} · ${job.restarts} ${job.restarts === 1 ? 'restart' : 'restarts'}`}
-        detailTone={job.status === 'running' ? (job.crashes > 1 ? 'amber' : 'green') : 'red'}
+        tone={job.status === 'stopped' ? 'red' : job.crashes > 1 ? 'gold' : 'ok'}
       />
-      <Tile
-        icon={<IconShield />}
-        iconTone="it-amber"
-        title="Diagnosis"
-        value={d ? (d.classification === 'shared_cause' ? 'Shared cause' : 'Isolated') : mode === 'naive' && job.crashes ? 'Not checked' : 'None'}
+      <Metric
+        name="Diagnosis"
+        value={d ? (d.classification === 'shared_cause' ? 'Shared cause' : 'Isolated') : naiveCrash ? 'Not checked' : 'None'}
         detail={
-          d
-            ? `${label(d.cause ?? d.node)} · ${d.atRisk.length} nodes at risk`
-            : mode === 'naive' && job.crashes
-              ? 'Naive scheduler never asks why'
-              : 'No failures to diagnose'
+          d ? `${label(d.cause ?? d.node)} · ${d.atRisk.length} nodes at risk` : naiveCrash ? 'Naive scheduler never asks why' : 'No failures to diagnose'
         }
-        detailTone={d ? 'amber' : mode === 'naive' && job.crashes ? 'red' : 'muted'}
+        tone={d ? 'gold' : naiveCrash ? 'red' : 'muted'}
       />
-      <Tile
-        icon={<IconLock />}
-        iconTone="it-purple"
-        title="Leases"
+      <Metric
+        name="Leases"
         value={
           <>
             {activeLeases.length}
-            <span className="tile-of"> active</span>
+            <span className="metric-of"> active</span>
           </>
         }
         detail={
@@ -94,7 +80,7 @@ export function StatTiles() {
               ? `Protecting ${protection.racks?.length ?? 0} racks for 72 h`
               : 'No leases held'
         }
-        detailTone={world.deniedRequests ? 'red' : protection ? 'blue' : 'muted'}
+        tone={world.deniedRequests ? 'red' : protection ? 'azure' : 'muted'}
       />
     </div>
   );
