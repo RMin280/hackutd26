@@ -1,10 +1,11 @@
 """The credit guard (agents/budget.py): no request is sent once a cap would be crossed, real
 costs are recorded, a damaged ledger refuses rather than resetting, and the router fails
-over to a free backup or fails closed."""
+over to a free tier or fails closed."""
 
 from __future__ import annotations
 
 import json
+import os
 import threading
 from types import SimpleNamespace
 
@@ -14,9 +15,9 @@ from agents.budget import Budget, BudgetExceeded, Limits, is_metered
 from agents.config import Endpoint, Settings
 from agents.llm import ModelRouter, ModelUnavailable
 
-PAID = Endpoint("primary", "openrouter", "https://openrouter.ai/api/v1", "sk-or-test", "nvidia/nemotron-3-super-120b-a12b")
-FREE = Endpoint("backup", "openrouter", "https://openrouter.ai/api/v1", "sk-or-test", "nvidia/nemotron-3-ultra-550b-a55b:free")
-BREV = Endpoint("primary", "openai_compatible", "http://localhost:8000/v1", "", "nemotron")
+PAID = Endpoint("super", "openrouter", "https://openrouter.ai/api/v1", "sk-or-test", "nvidia/nemotron-3-super-120b-a12b")
+FREE = Endpoint("ultra", "openrouter", "https://openrouter.ai/api/v1", "sk-or-test", "nvidia/nemotron-3-ultra-550b-a55b:free")
+BREV = Endpoint("brev", "openai_compatible", "http://localhost:8000/v1", "", "nemotron")
 MSGS = [{"role": "user", "content": "x" * 3000}]
 
 
@@ -79,8 +80,22 @@ def test_concurrent_agents_never_lose_a_charge(tmp_path):
     assert json.loads(path.read_text())["requests"] == 80
 
 
-def settings(primary: Endpoint, backup: Endpoint | None) -> Settings:
-    return Settings(primary, backup, (), "low", 0.6, 30, 60, "", "", "", budget=Limits(total_usd=0.0001))
+def test_a_lock_file_being_deleted_is_waited_for_not_raised(tmp_path, monkeypatch):
+    real_open, opens = os.open, []
+
+    def open_once_denied(path, flags, *args):
+        opens.append(path)
+        if len(opens) == 1:
+            raise PermissionError(13, "Access is denied")  # Windows, while another agent deletes the lock
+        return real_open(path, flags, *args)
+
+    monkeypatch.setattr("agents.budget.os.open", open_once_denied)
+    assert Budget(path=tmp_path / "usage.json").record(PAID, completion(cost=0.01)) == 0.01
+    assert len(opens) >= 2
+
+
+def settings(*tiers: Endpoint) -> Settings:
+    return Settings(tiers, (), "low", 0.6, 30, 60, "", "", "", budget=Limits(total_usd=0.0001))
 
 
 class NeverCalled:
@@ -92,12 +107,12 @@ class NeverCalled:
 
 
 def test_the_router_fails_closed_without_sending_when_the_cap_is_reached():
-    r = ModelRouter(settings(PAID, None), clients={"primary": NeverCalled()})
+    r = ModelRouter(settings(PAID), clients={"super": NeverCalled()})
     with pytest.raises(ModelUnavailable, match="Credit cap"):
         r.chat(MSGS)
 
 
-def test_the_router_falls_back_to_a_free_backup_when_the_paid_primary_is_capped():
+def test_the_router_falls_back_to_a_free_tier_when_a_paid_tier_is_capped():
     sent = []
 
     class Free:
@@ -113,7 +128,7 @@ def test_the_router_falls_back_to_a_free_backup_when_the_paid_primary_is_capped(
                          "choices": [{"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": "ok"}}]}
                     )  # fmt: skip
 
-    r = ModelRouter(settings(PAID, FREE), clients={"primary": NeverCalled(), "backup": Free()}, sleep=lambda s: None)
+    r = ModelRouter(settings(PAID, FREE), clients={"super": NeverCalled(), "ultra": Free()}, sleep=lambda s: None)
     reply = r.chat(MSGS)
     assert reply.endpoint == FREE and sent == [FREE.model] and "Credit cap" in (reply.failover_reason or "")
 

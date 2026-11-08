@@ -275,7 +275,7 @@ Every call carries an identity; scope is checked first; every call is logged.
 
 ### 8.2 Fixer agent (low-criticality fixes; `agents/fixer/`)
 
-An LLM agent that clears low-criticality issues so people only see the ones that matter. It runs on NVIDIA Nemotron: our own on a Brev GPU machine, with Nemotron 3 Ultra (free) on OpenRouter as the automatic fallback (`agents/llm.py`). Deterministic code decides what's low. The model only works through a fixed playbook, with tools bound to the issue, and Squawk checks every action.
+An LLM agent that clears low-criticality issues so people only see the ones that matter. It runs on NVIDIA Nemotron, three tiers tried in order (`agents/llm.py`): our own on a Brev GPU machine, then Nemotron 3.5 Super (free) and Nemotron 3 Ultra (free) on OpenRouter as automatic fallbacks. Testing uses only the free tiers (`LLM_FREE_ONLY=true`). Deterministic code decides what's low. The model only works through a fixed playbook, with tools bound to the issue, and Squawk checks every action.
 
 **Low** = every rack keeps full backup, nothing in a running job is touched, and Squawk allows every action.
 
@@ -338,7 +338,7 @@ Squawk approves or blocks physical actions and holds a map of every weak point, 
 - **Scope:** each key lists allowed rows and a role (`technician`, `shift_lead`, `scheduler_agent`, `cooling_agent`, `facility`, `viewer`, `admin`, `remediation_agent`). Scope is checked before any work.
 - **Audit log:** append-only (`audit`, private, survives resets); every request, verdict, lease and reason, with actor and time. Agent events go through `record_event`, so they are attributed and audited too.
 - **Untrusted text:** free text never changes a verdict; tools take structured actions only. The fixer fences report text as `<untrusted>`; its storyline includes an injected instruction it must ignore.
-- **Fail closed:** agents don't act if Squawk is unreachable; the fixer also stops when both model endpoints are down.
+- **Fail closed:** agents don't act if Squawk is unreachable; the fixer also stops when every model tier is down.
 - **Sensitive topology:** only scoped roles read the full map; tenants see only their own jobs' exposure. *Known limit:* topology tables are public today; scoping reads needs SpacetimeDB views, not built.
 - **Secrets:** `.env` (gitignored, template in `.env.example`); tokens never logged. The Tailscale network keeps the backend off the public internet.
 
@@ -394,7 +394,7 @@ The scenario runs on the backend (`scenario_start` / `scenario_next` / `scenario
 
 Two machines on one Tailscale network:
 
-- **Machine A** (dedicated backend box): `spacetime start` listening on its tailnet address (or all interfaces), the module published as `squawk`, the fixer agent (`python -m agents.fixer` with `SPACETIME_HOST` set to the local server), and the Brev port-forward for the primary model (`brev port-forward <machine> --port 8000:8000`). Keep the admin CLI identity here.
+- **Machine A** (dedicated backend box): `spacetime start` listening on its tailnet address (or all interfaces), the module published as `squawk`, the fixer agent (`python -m agents.fixer` with `SPACETIME_HOST` set to the local server), and the Brev port-forward for the first model tier (`brev port-forward <machine> --port 8000:8000`). Keep the admin CLI identity here.
 - **Machine B** (presenter): the view with `VITE_SPACETIMEDB_URI=http://<machine-A-tailnet-ip>:3000` and `VITE_SPACETIMEDB_DB=squawk`. The browser's SpacetimeDB identity self-registers as the shift lead. Presenter keys call the backend's scenario reducers over the tailnet.
 
 **Or on SpacetimeDB Maincloud** (set up 2026-11-08): the module is published as `hackutd26-2he95`, so the view and the agents point at `https://maincloud.spacetimedb.com` from any network, with no Tailscale needed for the backend. The fixer and the Brev port-forward still run on one machine. Anyone who knows the database name can read the public tables there and connect, so open registration is closed (`bash dev.sh cloud lock`) once the presenter's browsers and the agents are registered. The local two-machine setup above stays as the fallback. Commands: the root `README.md`, "On SpacetimeDB Maincloud".

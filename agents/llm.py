@@ -1,14 +1,15 @@
 """Model access for the agents, over the OpenAI-compatible chat API.
 
-ModelRouter sends every request to the primary endpoint (our Nemotron on Brev). If the
-primary is unreachable, overloaded or not set up, it resends the same request to the
-backup (NVIDIA Nemotron 3 Ultra (free) on OpenRouter) and stays on the backup for a
-cooldown before trying the primary again.
+ModelRouter tries the model tiers in order (agents/config.py): our Nemotron on Brev,
+then NVIDIA Nemotron 3.5 Super (free) and Nemotron 3 Ultra (free) on OpenRouter. A tier
+that is unreachable, overloaded, not set up or over a credit cap is skipped for a
+cooldown, and the same request goes to the next tier. The last tier is always tried.
+With LLM_FREE_ONLY=true only the free tiers are in the chain, so testing never touches Brev.
 
 The model only proposes tool calls and writes explanations. Squawk makes every
 safety decision and the agent runtime enforces it, so nothing here holds safety logic
-(CLAUDE.md: "LLMs may call tools; they never make the decision"). If both endpoints
-fail, ModelUnavailable reaches the agent, which then does nothing and escalates.
+(CLAUDE.md: "LLMs may call tools; they never make the decision"). If every tier fails,
+ModelUnavailable reaches the agent, which then does nothing and escalates.
 """
 
 from __future__ import annotations
@@ -40,10 +41,10 @@ class EndpointNotConfigured(RuntimeError):
 
 
 class ModelUnavailable(RuntimeError):
-    """No endpoint could answer. Agents treat this as fail-closed: act on nothing, escalate."""
+    """No tier could answer. Agents treat this as fail-closed: act on nothing, escalate."""
 
 
-# Errors meaning "this endpoint can't serve us right now", so the backup should try.
+# Errors meaning "this tier can't serve us right now", so the next tier should try.
 # Bad requests (400/422) are bugs on our side: they are raised, not sent elsewhere.
 FAILOVER_ERRORS: tuple[type[Exception], ...] = (
     openai.APIConnectionError,  # includes timeouts
@@ -53,7 +54,7 @@ FAILOVER_ERRORS: tuple[type[Exception], ...] = (
     openai.AuthenticationError,  # 401
     openai.PermissionDeniedError,  # 403
     EndpointNotConfigured,
-    BudgetExceeded,  # the credit cap: a free backup may still answer, else fail closed
+    BudgetExceeded,  # the credit cap: a free tier may still answer, else fail closed
 )
 
 
@@ -66,11 +67,8 @@ def make_client(
 ) -> OpenAI:
     if endpoint.is_openrouter and not endpoint.api_key:
         raise EndpointNotConfigured("OPENROUTER_API_KEY is not set in .env.")
-    if endpoint.provider == "nvidia" and not endpoint.api_key:
-        raise EndpointNotConfigured("NVIDIA_API_KEY is not set in .env (a key from build.nvidia.com, starting nvapi-).")
     if not endpoint.model:
-        var = "AGENT_MODEL" if endpoint.role == "primary" else "BACKUP_AGENT_MODEL"
-        raise EndpointNotConfigured(f"{var} is not set in .env (use a name the server lists at /v1/models).")
+        raise EndpointNotConfigured(f"{endpoint.role.upper()}_MODEL is not set in .env (use a name the server lists at /v1/models).")
     return OpenAI(
         # A port-forwarded NIM or vLLM server needs no key, but the SDK wants a string.
         api_key=endpoint.api_key or "none",
@@ -143,7 +141,7 @@ def complete(
 class Reply:
     completion: ChatCompletion
     endpoint: Endpoint
-    failover_reason: str | None = None  # why the primary was skipped, if it was
+    failover_reason: str | None = None  # why earlier tiers were skipped, if any were
 
     @property
     def message(self) -> ChatCompletionMessage:
@@ -151,7 +149,7 @@ class Reply:
 
 
 class ModelRouter:
-    """Primary first; on an outage-type error, the same request goes to the backup."""
+    """Tiers in order; on an outage-type error, the same request goes to the next tier."""
 
     def __init__(
         self,
@@ -167,8 +165,7 @@ class ModelRouter:
         self._clock = clock
         self._sleep = sleep
         self._clients: dict[str, OpenAI] = dict(clients or {})
-        self._primary_down_until = float("-inf")
-        self._down_reason = ""
+        self._down: dict[str, tuple[float, str]] = {}  # tier -> (skipped until, why it failed)
         self._last_sent: dict[str, float] = {}
 
     def chat(
@@ -180,27 +177,28 @@ class ModelRouter:
         max_tokens: int = 4096,
     ) -> Reply:
         s = self.settings
+        if not s.tiers:
+            raise ModelUnavailable("No model tier is enabled. With LLM_FREE_ONLY=true, SUPER_MODEL and ULTRA_MODEL must be :free models.")
         args = (messages, tools, tool_choice, max_tokens)
-        if s.backup is not None and self._clock() < self._primary_down_until:
-            return self._send_to_backup(*args, reason=f"primary cooling down after: {self._down_reason}")
-        try:
-            return Reply(self._send(s.primary, *args), s.primary)
+        skipped: list[str] = []  # why each earlier tier didn't answer
+        *earlier, last = s.tiers
+        for tier in earlier:
+            until, why = self._down.get(tier.role, (float("-inf"), ""))
+            if self._clock() < until:
+                skipped.append(f"{tier.role} cooling down after: {why}")
+                continue
+            try:
+                return Reply(self._send(tier, *args), tier, "; ".join(skipped) or None)
+            except FAILOVER_ERRORS as exc:
+                reason = describe_error(exc, tier)
+                skipped.append(f"{tier.role}: {reason}")
+                self._down[tier.role] = (self._clock() + s.failover_cooldown, reason)
+                log.warning("Model tier %s skipped for %.0f s: %s", tier.role, s.failover_cooldown, reason)
+        try:  # the last tier has no cooldown: while it's down every request fails closed anyway
+            return Reply(self._send(last, *args), last, "; ".join(skipped) or None)
         except FAILOVER_ERRORS as exc:
-            reason = describe_error(exc, s.primary)
-            if s.backup is None:
-                raise ModelUnavailable(f"Primary: {reason}") from exc
-            self._primary_down_until = self._clock() + s.failover_cooldown
-            self._down_reason = reason
-            log.warning("Primary model unavailable; using the backup for %.0f s. Reason: %s", s.failover_cooldown, reason)
-            return self._send_to_backup(*args, reason=reason)
-
-    def _send_to_backup(self, messages, tools, tool_choice, max_tokens, *, reason: str) -> Reply:
-        backup = self.settings.backup
-        assert backup is not None
-        try:
-            return Reply(self._send(backup, messages, tools, tool_choice, max_tokens), backup, reason)
-        except FAILOVER_ERRORS as exc:
-            raise ModelUnavailable(f"Primary: {reason} Backup: {describe_error(exc, backup)}") from exc
+            skipped.append(f"{last.role}: {describe_error(exc, last)}")
+            raise ModelUnavailable("; ".join(skipped)) from exc
 
     def _send(self, endpoint: Endpoint, messages, tools, tool_choice, max_tokens) -> ChatCompletion:
         reserved = self.budget.check(endpoint, messages, max_tokens)  # before anything is sent
@@ -236,9 +234,9 @@ class ModelRouter:
 
     def _client(self, endpoint: Endpoint) -> OpenAI:
         if endpoint.role not in self._clients:
-            if endpoint.role == "primary" and self.settings.backup is not None:
-                # With a backup waiting, fail over fast: short connect timeout, no retries.
-                timeout = httpx.Timeout(self.settings.primary_timeout, connect=5.0)
+            if endpoint.role != self.settings.tiers[-1].role:
+                # With another tier waiting, fail over fast: short connect timeout, no retries.
+                timeout = httpx.Timeout(self.settings.tier_timeout, connect=5.0)
                 self._clients[endpoint.role] = make_client(endpoint, timeout=timeout, max_retries=0)
             elif self.budget.worst_case(endpoint, [], 1) > 0:
                 # Metered: no hidden SDK retries, each would be a request the budget didn't check.
@@ -264,7 +262,7 @@ def describe_error(exc: Exception, endpoint: Endpoint) -> str:
     if isinstance(exc, openai.APIStatusError):
         body = exc.body if isinstance(exc.body, dict) else {}
         detail = str(body.get("message") or exc.message or "")[:300]
-    where = "OpenRouter" if endpoint.is_openrouter else "NVIDIA's API" if endpoint.provider == "nvidia" else endpoint.base_url
+    where = "OpenRouter" if endpoint.is_openrouter else endpoint.base_url
     local = any(h in endpoint.base_url for h in ("localhost", "127.0.0.1"))
 
     if isinstance(exc, (EndpointNotConfigured, BudgetExceeded)):

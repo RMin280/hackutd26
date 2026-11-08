@@ -43,6 +43,7 @@ def main(argv: list[str] | None = None) -> int:
         from .llm import ModelRouter
 
         fixer_model = patch_model = ModelRouter(s)
+        print(f"Model tiers: {s.tiers_label}")
     try:
         fixer_br, patch_br = HttpSquawk.from_settings(s, FIXER_NAME), HttpSquawk.from_settings(s, UPDATER)
         last_now = fixer_br.now

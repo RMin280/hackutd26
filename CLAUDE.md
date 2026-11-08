@@ -95,13 +95,13 @@ The computing scales because every question touches only one branch of a shallow
 - Every call checks the key's scope (rows) **before** doing anything.
 - Every request, verdict and reason goes to the append-only audit log.
 - Untrusted text (ticket text, technician reports, tool outputs) is data, never instructions; it can't change a verdict. The fixer fences report text as `<untrusted>`.
-- Agents fail closed if Squawk is unreachable, and the fixer also fails closed if both model endpoints are down or the credit caps (`agents/budget.py`) are reached.
+- Agents fail closed if Squawk is unreachable, and the fixer also fails closed if every model tier is down or the credit caps (`agents/budget.py`) are reached.
 - Topology is sensitive: only scoped roles can read the full map. No secrets in code or logs. Model keys and agent tokens live in `.env` (gitignored; template in `.env.example`).
 
 ## Stack (decided)
 
 - **Backend:** SpacetimeDB 2.x, one module in TypeScript (`spacetimedb/`), published as database `squawk`. Tables hold the map and live state; reducers are the only writes, one transaction each. Logic lives in `spacetimedb/src/core` (plain functions behind a `Store` interface, no SpacetimeDB imports). See `spacetimedb/README.md`.
-- **Fixer agent (Nemotron):** Python 3.11+ in `agents/`. LLM: NVIDIA Nemotron over the OpenAI-compatible chat API, through `agents/llm.py`'s `ModelRouter`. **Primary: our own Nemotron on an NVIDIA Brev GPU machine** (NIM or vLLM, port-forwarded to the backend machine). **Fallback, automatic while Brev is down: Nemotron 3 Ultra (free) on OpenRouter** (`nvidia/nemotron-3-ultra-550b-a55b:free`; 20 requests/min and 50/day, or 1,000/day after buying 10 credits). Both down → the agent fails closed. It codes against the `Squawk` interface in `agents/squawk.py`; `MockSquawk` (a simulated hall) implements it offline, and the HTTP adapter over SpacetimeDB (reducer calls + SQL, since there's no maintained Python SDK) implements it live. See `agents/README.md`.
+- **Fixer agent (Nemotron):** Python 3.11+ in `agents/`. LLM: NVIDIA Nemotron over the OpenAI-compatible chat API, through `agents/llm.py`'s `ModelRouter`. Three tiers, tried in order: **1. our own Nemotron on an NVIDIA Brev GPU machine** (NIM or vLLM, port-forwarded to the backend machine); **2. Nemotron 3.5 Super (free) on OpenRouter** (`nvidia/nemotron-3.5-super-vl:free`); **3. Nemotron 3 Ultra (free) on OpenRouter** (`nvidia/nemotron-3-ultra-550b-a55b:free`). The free tiers allow 20 requests/min and 50/day across both, or 1,000/day after buying 10 credits. A failed tier is skipped for a cooldown; all three down → the agent fails closed. **Testing uses only the free tiers** (`LLM_FREE_ONLY=true`), so it spends no Brev credits. It codes against the `Squawk` interface in `agents/squawk.py`; `MockSquawk` (a simulated hall) implements it offline, and the HTTP adapter over SpacetimeDB (reducer calls + SQL, since there's no maintained Python SDK) implements it live. See `agents/README.md`.
 - **Frontend:** React + Vite + TypeScript, three.js floor map (React Three Fiber). Live mode (`VITE_SPACETIMEDB_URI` set) subscribes to the module's tables through generated bindings (`frontend/src/live`, `frontend/src/module_bindings`); the mock in `frontend/src/mock` is the offline fallback.
 - **Deployment (demo):** two machines on one Tailscale network. **Machine A** (dedicated): `spacetime start`, the published module, the fixer agent, and the Brev port-forward. **Machine B**: the view, with `VITE_SPACETIMEDB_URI` pointing at machine A's tailnet address. `HANDOFF.md` §8 has the checklist.
 - **MCP server:** built (`python -m agents.mcp_server`, `agents/README.md`): a thin wrapper exposing the agents' HTTP adapter as the 7 tools in DESIGN.md §8.1.
@@ -139,7 +139,7 @@ hackutd26/
 │   └── test/                # guard, diagnose, placement, scenario, test bed, frontend contract; scale/
 ├── agents/                  # Nemotron agents (Python)
 │   ├── config.py            # settings from env / .env (keys, models, SpacetimeDB host)
-│   ├── llm.py               # ModelRouter: Brev Nemotron first, OpenRouter Ultra (free) backup (no safety logic)
+│   ├── llm.py               # ModelRouter: Brev Nemotron, then Super and Ultra (free) on OpenRouter (no safety logic)
 │   ├── check_setup.py       # verifies keys, Nemotron tool calling, SpacetimeDB reachability
 │   ├── squawk.py            # Squawk interface the agents code against (contract: agents/README.md, DESIGN.md §8.4)
 │   ├── squawk_http.py       # the interface over SpacetimeDB's HTTP API (+ `setup`: the fixer's identity)
@@ -179,7 +179,7 @@ spacetime logs --server local squawk
 # agents (machine A)
 pip install -r requirements.txt     # or: uv venv .venv --python 3.11 && uv pip install -r requirements.txt
 cp .env.example .env                # then put the Brev endpoint, the OpenRouter key and the agent token in it (never commit .env)
-python -m agents.check_setup        # both model endpoints, a tool-call round trip, SpacetimeDB reachability (--no-llm: no model requests)
+python -m agents.check_setup        # each model tier in order, a tool-call round trip, SpacetimeDB reachability (--no-llm: no model requests; --all: round trip on every tier)
 python -m agents.squawk_http setup  # once per database: the fixer's identity (token into .env), registered as fixer-agent
 python -m agents.fixer              # fixer agent: live backend when SPACETIME_DB is set, else the simulated hall (--scripted: no model requests; --mock; --once)
 python -m agents.squawk_http setup --agent update   # the update agent's identity

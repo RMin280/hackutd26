@@ -45,7 +45,7 @@ def main(argv: list[str] | None = None) -> int:
 
         model = ModelRouter(settings)
         b = model.budget.summary()
-        print(f"Model: primary {settings.primary.label}; credit cap ${b['limits'].total_usd:.2f} (${b['total_usd']:.4f} spent), ${b['limits'].daily_usd:.2f}/day")
+        print(f"Model tiers: {settings.tiers_label}; credit cap ${b['limits'].total_usd:.2f} (${b['total_usd']:.4f} spent), ${b['limits'].daily_usd:.2f}/day")
     advisories = load_advisories(args.advisories)
     print(f"Advisories: {len(advisories)} ({', '.join(a.id for a in advisories)})")
 

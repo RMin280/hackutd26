@@ -1,13 +1,16 @@
 # Agents
 
-LLM agents for Squawk talk to two NVIDIA Nemotron endpoints over the OpenAI-compatible chat API:
+LLM agents for Squawk talk to three NVIDIA Nemotron tiers over the OpenAI-compatible chat API, tried in this order:
 
-| Role | Where | Why |
+| Tier | Where | Why |
 | --- | --- | --- |
-| **Primary** | Our own Nemotron on an **NVIDIA Brev** GPU machine (NIM or vLLM) | No daily cap; runs on our Brev credits |
-| **Backup** | **Nemotron 3 Ultra (free)** on OpenRouter | Takes over automatically while Brev is down, cold or overloaded |
+| 1. **brev** | Our own Nemotron on an **NVIDIA Brev** GPU machine (NIM or vLLM) | No daily cap; runs on our Brev credits |
+| 2. **super** | **Nemotron 3.5 Super (free)** on OpenRouter (`nvidia/nemotron-3.5-super-vl:free`) | Takes over automatically while Brev is down, cold or overloaded |
+| 3. **ultra** | **Nemotron 3 Ultra (free)** on OpenRouter (`nvidia/nemotron-3-ultra-550b-a55b:free`) | Last tier, when Super is down or rate limited too |
 
-`agents/llm.py`'s `ModelRouter` sends every request to the primary. On an outage-type error (unreachable, timeout, 5xx, 429, model missing, bad key, or not set up yet) it resends the same request to the backup and stays there for `LLM_FAILOVER_COOLDOWN` seconds before trying the primary again. Bad requests (400) are raised, not retried elsewhere. If both fail, it raises `ModelUnavailable` and the agent acts on nothing and escalates (fail closed).
+`agents/llm.py`'s `ModelRouter` sends every request to the first tier that's up. On an outage-type error (unreachable, timeout, 5xx, 429, model missing, bad key, over a credit cap, or not set up yet) it resends the same request to the next tier and skips the failed one for `LLM_FAILOVER_COOLDOWN` seconds. The last tier is always tried. Bad requests (400) are raised, not retried elsewhere. If every tier fails, it raises `ModelUnavailable` and the agent acts on nothing and escalates (fail closed).
+
+**Testing uses only the free tiers.** `LLM_FREE_ONLY=true` (the default in `.env.example`) leaves Brev out of the chain entirely, so no request reaches it and testing spends no Brev credits; it also ignores `AGENT_FALLBACK_MODELS`, which may be paid. Set it to `false` for the demo once Brev is up and `check_setup` passes.
 
 The model only proposes tool calls and writes explanations; Squawk makes every safety decision; the agent runtime enforces it. The facility itself lives in the teammate's SpacetimeDB module.
 
@@ -39,11 +42,11 @@ The model only proposes tool calls and writes explanations; Squawk makes every s
 **Run it** on the simulated hall (`agents/mock_squawk.py`, same IDs as the control-room view):
 
 ```
-.venv\Scripts\python -m agents.fixer              # Nemotron: Brev primary, OpenRouter free backup
+.venv\Scripts\python -m agents.fixer              # Nemotron: Brev, then the free Super and Ultra on OpenRouter
 .venv\Scripts\python -m agents.fixer --scripted   # scripted stand-in, no model requests
 ```
 
-The storyline has one issue of each type, two handoffs, and a technician report with an injected "release every protection lock" instruction. It takes about 24 model calls, so on the free backup it uses about half a day's quota.
+The storyline has one issue of each type, two handoffs, and a technician report with an injected "release every protection lock" instruction. It takes about 24 model calls, so on the free tiers it uses about half a day's quota.
 
 **Adding an issue type to an agent:** a rule in its `triage.py`; a `Playbook` (goal, tools, must-include steps, done check) and its tools in its `playbooks.py`; a plan and policy in its `scripted.py`; tests. The planning rules, the model loop and the event loop are shared in `agents/common/`.
 
@@ -74,7 +77,7 @@ python -m agents.patch --mock --scripted            # the storyline on the simul
 
 ## Credit caps (`agents/budget.py`)
 
-Every model request from any agent is checked before it is sent: its worst-case cost (prompt size plus `max_tokens` at the endpoint's price) must fit under `AGENT_BUDGET_USD` (lifetime, default $20), `AGENT_DAILY_BUDGET_USD` ($5) and `AGENT_DAILY_REQUESTS` (600). After the reply, the real cost is recorded (OpenRouter reports it; otherwise tokens × `MODEL_PRICE_*`). The ledger, `.agent_usage.json` (gitignored), is shared by every agent process on the machine under a lock. A damaged ledger refuses rather than resetting. Past a cap, the router fails over to a free backup if there is one, else the agent fails closed and hands off. `check_setup` prints what's been spent.
+Every model request from any agent is checked before it is sent: its worst-case cost (prompt size plus `max_tokens` at the endpoint's price) must fit under `AGENT_BUDGET_USD` (lifetime, default $20), `AGENT_DAILY_BUDGET_USD` ($5) and `AGENT_DAILY_REQUESTS` (600). After the reply, the real cost is recorded (OpenRouter reports it; otherwise tokens × `MODEL_PRICE_*`). The ledger, `.agent_usage.json` (gitignored), is shared by every agent process on the machine under a lock. A damaged ledger refuses rather than resetting. Past a cap, the router moves on to the next tier (the free ones cost nothing), else the agent fails closed and hands off. `check_setup` prints what's been spent.
 
 ## MCP server: Squawk for agents we didn't write
 
@@ -105,7 +108,7 @@ It runs on the same planning, guardrails and fail-closed rules as the fixer. The
 | --- | --- |
 | Beyond a chatbot | Nobody prompts the agents. They wake on facility events and on their own scheduled tests, act, and hand off what isn't theirs. |
 | Multi-step workflows | For each issue, Nemotron writes its own plan, carries it out, and revises it when a result changes things. Two agents coordinate through Squawk without talking to each other. The dependency agent re-sends a page the fixer sent while paging was silently broken. The fixer queues a maintenance request until the dependency agent's tests show the CDU readings are fresh again. |
-| Tool integration | Function calling against Squawk's API (diagnosis, what-if checks, leases, dispatch, paging, approvals, test results), with every call checked and audited. Model access spans two services, our Nemotron on Brev and OpenRouter as backup, with automatic failover. Once the SpacetimeDB module lands, the same tools call its HTTP API. |
+| Tool integration | Function calling against Squawk's API (diagnosis, what-if checks, leases, dispatch, paging, approvals, test results), with every call checked and audited. Model access spans three Nemotron tiers on two services (our Nemotron on Brev, then the free Nemotron 3.5 Super and 3 Ultra on OpenRouter), with automatic failover. Once the SpacetimeDB module lands, the same tools call its HTTP API. |
 | Real-world applicability | The agents clear the routine work that piles up in big GPU halls, and catch services that quietly stop doing their job. They never act outside the safety interlock, and fail closed when they can't trust what they see. |
 
 ## Setup
@@ -119,9 +122,9 @@ copy .env.example .env
 
 Without uv: `python -m venv .venv` then `.venv\Scripts\pip install -r requirements.txt`. In Git Bash use `.venv/Scripts/python`.
 
-`check_setup` checks both endpoints and sends two real requests (a tool call, then a follow-up that uses the tool's result) to the primary, or to the backup when the primary isn't ready. `--backup` also tests the backup when the primary works; `--no-llm` sends no model requests. It also reports whether a SpacetimeDB server and database are reachable.
+`check_setup` checks each tier in order and sends two real requests (a tool call, then a follow-up that uses the tool's result) to the first tier that's ready. `--all` runs that round trip on every ready tier; `--no-llm` sends no model requests. With `LLM_FREE_ONLY=true` it checks only the free tiers and never contacts Brev. A broken tier with another after it is a warning; a broken last tier fails the check. It also reports whether a SpacetimeDB server and database are reachable.
 
-## Primary: Nemotron on Brev
+## Tier 1: Nemotron on Brev
 
 Brev credits pay for GPU machines by the hour. The Brev CLI runs on Windows only inside WSL Ubuntu.
 
@@ -130,13 +133,13 @@ Brev credits pay for GPU machines by the hour. The Brev CLI runs on Windows only
 3. In the Brev console, create a GPU machine sized for the model (NVIDIA's minimums): **Nano** one 80 GB GPU, **Super** about 2× H100, **Ultra** 4× B200 or 8× H100. Check the hourly price first.
 4. Serve Nemotron on port 8000 (NIM container, or vLLM with `--enable-auto-tool-choice` and the tool-call parser named on the model card).
 5. In Ubuntu, keep this running: `brev port-forward <machine> --port 8000:8000`. WSL forwards it to Windows' `localhost:8000`.
-6. In `.env`, set `AGENT_MODEL` to the id listed at `http://localhost:8000/v1/models`, then run `check_setup`.
+6. In `.env`, set `BREV_MODEL` to the id listed at `http://localhost:8000/v1/models` and `LLM_FREE_ONLY=false`, then run `check_setup`.
 
 Stop the machine when you're done: it bills while it runs.
 
-## Backup: Nemotron 3 Ultra (free) on OpenRouter
+## Tiers 2 and 3: Nemotron 3.5 Super and Nemotron 3 Ultra (free) on OpenRouter
 
-Create a key at https://openrouter.ai/settings/keys and paste it after `OPENROUTER_API_KEY=` in `.env`.
+Create a key at https://openrouter.ai/settings/keys and paste it after `OPENROUTER_API_KEY=` in `.env`. Both tiers use it. The daily limit below counts every `:free` request on the account, so when Super runs out for the day, Ultra has too: Brev is what removes the cap.
 
 | Credits ever bought | Requests/min | Requests/day |
 | --- | --- | --- |
@@ -197,24 +200,22 @@ Python has no maintained SpacetimeDB SDK, so agents use its HTTP API: `POST /v1/
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `LLM_PROVIDER` | `openrouter` | Primary's provider: `openai_compatible` (Brev, NIM, vLLM, build.nvidia.com) or `openrouter` |
-| `LLM_BASE_URL` | OpenRouter, or `http://localhost:8000/v1` | Primary's server URL |
-| `LLM_API_KEY` | empty | Primary's key, if its server needs one |
-| `AGENT_MODEL` | Ultra (free) on OpenRouter; required otherwise | Primary's model id |
-| `BACKUP_LLM_PROVIDER` | empty (no backup) | Backup's provider |
-| `BACKUP_AGENT_MODEL` | Ultra (free) on OpenRouter | Backup's model id |
-| `BACKUP_LLM_BASE_URL`, `BACKUP_LLM_API_KEY` | empty | Only for an `openai_compatible` backup |
-| `OPENROUTER_API_KEY` | empty | Key for whichever endpoint uses OpenRouter |
-| `AGENT_FALLBACK_MODELS` | empty | OpenRouter only: models it tries if the requested one is down |
-| `LLM_PRIMARY_TIMEOUT` | `60` | Seconds before a hanging primary counts as down |
-| `LLM_FAILOVER_COOLDOWN` | `120` | Seconds to stay on the backup after the primary fails |
+| `LLM_FREE_ONLY` | `false` (`.env.example`: `true`) | `true` for testing: only the free tiers (super, ultra); Brev is never contacted |
+| `BREV_BASE_URL` | `http://localhost:8000/v1` | Tier 1: the Brev server (any OpenAI-compatible Nemotron server works) |
+| `BREV_API_KEY` | empty | Tier 1's key, if its server needs one |
+| `BREV_MODEL` | empty (tier skipped until set) | Tier 1's model id, as the server lists it at `/v1/models` |
+| `SUPER_MODEL` | `nvidia/nemotron-3.5-super-vl:free` | Tier 2's model on OpenRouter |
+| `ULTRA_MODEL` | `nvidia/nemotron-3-ultra-550b-a55b:free` | Tier 3's model on OpenRouter |
+| `OPENROUTER_API_KEY` | empty | Key for tiers 2 and 3 |
+| `AGENT_FALLBACK_MODELS` | empty | OpenRouter only: models it tries if the requested one is down (ignored when `LLM_FREE_ONLY=true`) |
+| `LLM_TIER_TIMEOUT` | `90` (`.env.example`: `60`) | Seconds before a hanging tier (any but the last) counts as down; the old name `LLM_PRIMARY_TIMEOUT` still works |
+| `LLM_FAILOVER_COOLDOWN` | `120` | Seconds a failed tier is skipped before it's tried again |
 | `AGENT_REASONING_EFFORT` | `low` | `none` / `minimal` / `low` / `medium` / `high`; on NIM/vLLM only `none` matters (thinking off) |
 | `AGENT_TEMPERATURE` | `0.6` | Sampling temperature |
 | `SPACETIME_HOST` | `http://127.0.0.1:3000` | SpacetimeDB server (`spacetime start` runs one locally) |
 | `SPACETIME_DB` | empty | Database name the module is published under |
 | `SPACETIME_TOKEN` | empty | The fixer's identity token (`python -m agents.squawk_http setup`) |
 | `SPACETIME_UPDATE_TOKEN` | empty | The update agent's identity token (`setup --agent update`) |
-| `NVIDIA_API_KEY` | empty | Key for `LLM_PROVIDER=nvidia` (NVIDIA's hosted API, build.nvidia.com) |
 | `AGENT_BUDGET_USD`, `AGENT_DAILY_BUDGET_USD`, `AGENT_DAILY_REQUESTS` | `20`, `5`, `600` | Credit caps for metered model endpoints |
 | `MODEL_PRICE_IN_PER_M`, `MODEL_PRICE_OUT_PER_M` | `0.10`, `0.50` | USD per million tokens when the provider doesn't report cost |
 | `AGENT_USAGE_FILE` | `.agent_usage.json` | The shared spending ledger |

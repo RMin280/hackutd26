@@ -42,7 +42,7 @@ Merge order: `frontend` → `spacetime-init` → `nemotron-init` into one integr
 | `README.md`, `dev.sh` | How to run the backend and the view in live mode | **Current** (renamed on `integration`) |
 | `spacetimedb/` | Backend: SpacetimeDB module (tables + reducers), the interlock with work scopes, diagnosis, placement, the presenter's scenario, the diagnostics test bed, tests. Start with its `README.md` | **Current** (`spacetime-init`). First real `spacetime publish` against a live server: **confirm** |
 | `frontend/` | The control-room view (Squawk). `src/mock/` = offline fallback, `src/live/` = SpacetimeDB data source, `src/module_bindings/` = generated, `src/ui/board/` = the work board | **Current** on `main`: visuals + live mode combined; the tech gull (`T`), the fixer's popups, the Scenario picker and the work board (`B`) |
-| `agents/` | Nemotron model router (Brev primary, OpenRouter free fallback), the fixer agent, the dependency agent (deferred), a simulated Squawk they run on, and the SpacetimeDB contract in `agents/README.md` | **Current** (`nemotron-init`); runs on its own simulated hall; **the HTTP adapter to the backend is the next build** |
+| `agents/` | Nemotron model router (Brev first, then the free Nemotron 3.5 Super and 3 Ultra on OpenRouter), the fixer agent, the dependency agent (deferred), a simulated Squawk they run on, and the SpacetimeDB contract in `agents/README.md` | **Current** (`nemotron-init`); runs on its own simulated hall; **the HTTP adapter to the backend is the next build** |
 | `MERGE.md` | What the backend and the view add for the agents' work to show up, plus merge notes for `nemotron-init` | **Current**, except §6 (the SpacetimeDB branch exists: `spacetime-init`) and §5 (dependency agent deferred) |
 | `agents/DEPENDENCY_AGENT.md` | The dependency agent's design, storyline and backend/view needs | **Current**; deferred until the fixer is live |
 | Project doc `frontend-status.md` (claude.ai project, not in the repo) | Frontend decisions and open items | **Partly stale**: the Nov 7 pass it calls "not committed yet" is commit `2352cd7`; its open question on renaming the docs is decided (Squawk) |
@@ -75,7 +75,7 @@ Not in the repo, although older docs mentioned them: `FRONTEND.md`, the `.claude
 | **The fixer is in the main demo** (2026-11-07) | It works together with the backend and the view as one system; steps 7–9 of DESIGN.md §10.2 |
 | **Dependency agent deferred** (2026-11-07) | Prioritize the fixer. It's built on `nemotron-init` and stays there; it comes back after the fixer is live (it needs five tables, two reducers, three rules and four view elements) |
 | **Events: one feed, the `decision` table** (2026-11-07) | Chosen as the most scalable: one `seq` cursor for agents, one subscription for the view, nothing to merge. `decision` gains `type`, `subject`, `data`; a `record_event` reducer lets agent roles write rows (DESIGN.md §4.3) |
-| **Our Nemotron on Brev first, Nemotron 3 Ultra (free) on OpenRouter as the automatic fallback** | No daily cap on Brev; the free tier (50 requests/day without credits) is the fallback and what works today. Both down → fail closed |
+| **Three Nemotron tiers: our Nemotron on Brev, then Nemotron 3.5 Super (free), then Nemotron 3 Ultra (free) on OpenRouter** (2026-11-08; was Brev + Ultra) | No daily cap on Brev; the free tiers (50 requests/day across both without credits) are the fallback and what works today. Testing runs on the free tiers only (`LLM_FREE_ONLY=true`) so it spends no Brev credits. All three down → fail closed. A paid Claude tier was considered and dropped |
 | **MCP server: if time, last** | Not needed for the demo; our agents call the backend's HTTP API directly. It's a thin wrapper over the same adapter, so it can be the last thing built |
 | **Two machines over Tailscale** (2026-11-07) | A dedicated box runs SpacetimeDB, the fixer and the Brev port-forward; the presenter's machine runs the view against it. Nothing on the public internet |
 | **Squawk, everywhere** (2026-11-07) | Screen, docs, pitch, database name and code identifiers. The old name is not used. The code rename is part of the merge (§8 step 2) |
@@ -146,7 +146,7 @@ This runs end to end on the backend (`scenario_*`) and in the view's mock today.
 - **"Do agents really not see each other?"** They can message where someone wired it up, but talking isn't coordinating. Like pilots on the radio: the tower still decides who gets the runway.
 - **"Why an LLM agent if everything is deterministic?"** The *decisions* are deterministic: what's safe, what a failure means, where to restart. The agent doesn't make those. It does the operator's routine work around them: notices an issue, plans the steps, calls the tools, hands off what isn't its job. Code decides what counts as an issue, checks the plan, and confirms the result; the model never picks a target or a verdict.
 - **"What if the model goes rogue or gets prompt-injected?"** It only has the tools bound to the issue, every action is checked by Squawk, report text is fenced as untrusted, and the storyline includes an injected "release every protection lock" instruction that it ignores.
-- **"Why two Nemotron endpoints?"** Our own model on Brev has no daily cap; the free OpenRouter Ultra is the automatic fallback. If both are down the agent stops and escalates; it never guesses.
+- **"Why three Nemotron tiers?"** Our own model on Brev has no daily cap; the free Nemotron 3.5 Super and then Nemotron 3 Ultra on OpenRouter take over automatically. If all three are down the agent stops and escalates; it never guesses.
 
 ## 8. Next steps (in order)
 
@@ -164,7 +164,7 @@ This runs end to end on the backend (`scenario_*`) and in the view's mock today.
 11. If time remains: side-by-side naive vs Squawk mode. The MCP server (7 tools) is **built** (`python -m agents.mcp_server`, `agents/README.md`).
 12. **Update agent + Nemotron credits** (built overnight 2026-11-08; details in `agents/README.md`, notes in the shared session notes):
     - **Republish the module** (`bash dev.sh cloud publish` / `bash dev.sh publish`): it adds the `update_agent` role (no schema change, data kept).
-    - **Model key:** put it in `.env` (`OPENROUTER_API_KEY`, or `NVIDIA_API_KEY` with `LLM_PROVIDER=nvidia`). For paid OpenRouter credits, set the primary to `LLM_PROVIDER=openrouter`, `AGENT_MODEL=nvidia/nemotron-3-super-120b-a12b` (≈$0.003 per agent run). Caps default to $20 lifetime / $5 a day; `python -m agents.check_setup` shows the spend.
+    - **Model tiers** (changed 2026-11-08): copy the LLM section of `.env.example` into `.env` (the old `LLM_PROVIDER` / `AGENT_MODEL` / `BACKUP_*` settings are ignored now, with a warning). `OPENROUTER_API_KEY` serves the free Super and Ultra tiers. While testing keep `LLM_FREE_ONLY=true`; for the demo, once the Brev machine serves Nemotron, set `BREV_MODEL` and `LLM_FREE_ONLY=false` and run `python -m agents.check_setup` (it checks the tiers in order). Caps default to $20 lifetime / $5 a day and apply to any paid model; `check_setup` shows the spend.
     - **Identity:** `python -m agents.squawk_http setup --agent update --server maincloud` (the CLI must be the database's admin).
     - **Run:** `python -m agents.patch --scripted --once` first, then without `--scripted`. On stage, run it alongside the fixer.
     - **Frontend dependency:** `python -m agents.deps` flags Vite 5 (dev-server advisories, high). The fix is Vite 8, a major upgrade: test it on a branch or accept it for the demo (it only affects `npm run dev`, not a production build).
@@ -174,7 +174,7 @@ This runs end to end on the backend (`scenario_*`) and in the view's mock today.
 1. Team owners for backend, agents, frontend and pitch; **who owns "no"** on scope. (The frontend + live-mode combination is assigned to Claude.)
 2. ~~MCP server: confirmed skip-unless-time, or do we want it for the pitch line?~~ Built 2026-11-08 (`agents/mcp_server.py`); the pitch can say "agents connect over MCP or Squawk's API".
 3. ~~Has `spacetime publish` run against a real server yet?~~ The module is published on Maincloud as `squawk-hackutd26` (2026-11-08); confirm it answers from the presenter's machine.
-4. Is the Brev machine up, and which Nemotron size is on it (Nano / Super / Ultra)? Until then the demo runs on the free OpenRouter fallback (50 requests/day; the fixer storyline is ~24 calls).
+4. Is the Brev machine up, and which Nemotron size is on it (Nano / Super / Ultra)? Until then the demo runs on the free OpenRouter tiers, Super then Ultra (50 requests/day across both; the fixer storyline is ~24 calls). Brev hasn't been tested yet: it needs WSL Ubuntu or Linux for the port-forward.
 5. Steps 7–9 of the demo (DESIGN.md §10.2): adjust the beats while building.
 6. Demo hall size: is 1,280 nodes (160 spares) enough to make placement convincing?
 7. Do we update the team doc's story and pitch sections before sharing it further?

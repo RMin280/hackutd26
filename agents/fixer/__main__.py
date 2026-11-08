@@ -1,7 +1,7 @@
 """Run the fixer agent: against the live backend when SPACETIME_DB is set in .env, otherwise
 on the simulated hall's storyline.
 
-    python -m agents.fixer              # Nemotron: Brev primary, OpenRouter free backup
+    python -m agents.fixer              # Nemotron: Brev, then the free Super and Ultra on OpenRouter
     python -m agents.fixer --scripted   # scripted stand-in, no model requests
     python -m agents.fixer --mock       # the simulated hall's storyline, even with SPACETIME_DB set
     python -m agents.fixer --once       # live: handle what's in the feed now, then exit
@@ -41,8 +41,7 @@ def main(argv: list[str] | None = None) -> int:
         print("Model: scripted stand-in (no requests)")
     else:
         model = ModelRouter(settings)
-        backup = settings.backup.label if settings.backup else "none"
-        print(f"Model: primary {settings.primary.label}; backup {backup}")
+        print(f"Model tiers: {settings.tiers_label}")
 
     if args.mock or not settings.spacetime_db:
         if not args.mock:

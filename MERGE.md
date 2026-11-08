@@ -12,7 +12,7 @@
 
 | Path | What it is |
 | --- | --- |
-| `agents/llm.py`, `agents/config.py` | Model access: our Nemotron on a Brev GPU machine first, Nemotron 3 Ultra (free) on OpenRouter as automatic backup |
+| `agents/llm.py`, `agents/config.py` | Model access: our Nemotron on a Brev GPU machine first, then Nemotron 3.5 Super (free) and Nemotron 3 Ultra (free) on OpenRouter, with automatic failover; `LLM_FREE_ONLY=true` keeps testing on the free tiers |
 | `agents/fixer/` | The fixer agent: fixes four low-criticality issue types only through Squawk, planning its own steps (DESIGN.md §8.2) |
 | `agents/dependency/` | The dependency agent: catches services that say they're up while a feature we rely on is broken, and responds through Squawk (DESIGN.md §8.3, `agents/DEPENDENCY_AGENT.md`) |
 | `agents/common/` | What both agents share: planning rules, tools bound to the issue, the model loop, the event loop |
@@ -128,7 +128,7 @@ Built on this branch and waiting on approval; see [`agents/DEPENDENCY_AGENT.md`]
 | SpacetimeDB tables, reducers and rules from the contract | SpacetimeDB teammate | Module on `spacetime-init`; gaps listed in DESIGN.md §8.4 |
 | HTTP adapter so the agents use SpacetimeDB instead of the simulated hall | Agents (`nemotron-init`) | Next: after the DESIGN.md §8.4 additions |
 | Subscription, agent events in the decision feed, and §5 | Frontend teammate | Not started |
-| Brev machine as the primary model | Agents | Waiting on a Brev machine; the free OpenRouter backup works now |
+| Brev machine as the first model tier | Agents | Waiting on a Brev machine; the free OpenRouter tiers (Super, then Ultra) work now |
 | Fixer agent | Agents | Built |
 | Dependency agent | Agents | Built; **deferred** until the fixer is live |
 | MCP server | Unassigned | If time, last |

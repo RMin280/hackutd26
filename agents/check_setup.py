@@ -1,14 +1,15 @@
-"""Check the agent setup: Python, packages, both model endpoints (primary: our Nemotron
-on Brev; backup: Nemotron 3 Ultra (free) on OpenRouter), a real tool-call round trip,
-and (optionally) the teammate's SpacetimeDB database.
+"""Check the agent setup: Python, packages, each model tier in order (our Nemotron on
+Brev, then Nemotron 3.5 Super (free) and Nemotron 3 Ultra (free) on OpenRouter), a real
+tool-call round trip, and (optionally) the SpacetimeDB database.
 
     .venv\\Scripts\\python -m agents.check_setup     # PowerShell
     .venv/Scripts/python -m agents.check_setup       # Git Bash
     ... --no-llm    skip all model requests
-    ... --backup    also run the round trip on the backup, even when the primary works
+    ... --all       run the round trip on every ready tier, not just the first
 
-Exits 0 when the agents can run: the primary works, or it's down and the backup works.
-A broken backup always fails the check, since it's what keeps the demo running.
+With LLM_FREE_ONLY=true only the free tiers are checked, and Brev is never contacted.
+Exits 0 when the agents can run: some tier works and the last tier is ready. A broken last
+tier always fails the check, since it's what keeps the demo running when the others drop.
 """
 
 from __future__ import annotations
@@ -147,7 +148,7 @@ def check_server(ep: Any, bad: Callable[..., None], r: Report) -> bool:
     """A NIM / vLLM server (e.g. on Brev): reachable, and serving the configured model."""
     import httpx
 
-    var = "AGENT_MODEL" if ep.role == "primary" else "BACKUP_AGENT_MODEL"
+    var = f"{ep.role.upper()}_MODEL"
     local = any(h in ep.base_url for h in ("localhost", "127.0.0.1"))
     headers = {"Authorization": f"Bearer {ep.api_key}"} if ep.api_key else {}
     try:
@@ -161,8 +162,7 @@ def check_server(ep: Any, bad: Callable[..., None], r: Report) -> bool:
         bad(f"{ep.role}: no model server answers at {ep.base_url} ({type(exc).__name__})", fix)
         return False
     if resp.status_code in (401, 403):
-        hint = "Paste the key from build.nvidia.com into NVIDIA_API_KEY (it starts nvapi-)" if ep.provider == "nvidia" else ""
-        bad(f"{ep.role}: {ep.base_url} rejected the API key ({resp.status_code})", hint)
+        bad(f"{ep.role}: {ep.base_url} rejected the API key ({resp.status_code})", f"Check {ep.role.upper()}_API_KEY in .env")
         return False
     if resp.status_code != 200:
         if not ep.model:
@@ -326,7 +326,7 @@ def check_squawk_reads(r: Report, settings: Any) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Check the Squawk agent setup.")
     parser.add_argument("--no-llm", action="store_true", help="skip all model requests")
-    parser.add_argument("--backup", action="store_true", help="also run the round trip on the backup")
+    parser.add_argument("--all", action="store_true", help="run the round trip on every ready tier, not just the first")
     args = parser.parse_args(argv)
     sys.stdout.reconfigure(errors="replace")  # type: ignore[attr-defined]  # model text on cp1252 consoles
 
@@ -343,23 +343,29 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         r.fail(str(exc))
         return 1
-    primary, backup = settings.primary, settings.backup
-    print(f"\nPrimary: {primary.provider} at {primary.base_url}, model {primary.model or '(not set)'}")
-    print("Backup:  " + (f"{backup.provider} at {backup.base_url}, model {backup.model}" if backup else "none (set BACKUP_LLM_PROVIDER to add one)"))
+    tiers = settings.tiers
+    print("\nModel tiers, tried in this order:")
+    for i, t in enumerate(tiers, 1):
+        print(f"  {i}. {t.role:<6} {t.provider} at {t.base_url}, model {t.model or '(not set)'}")
+    if settings.free_only:
+        print("  LLM_FREE_ONLY=true (testing): only the free OpenRouter tiers; Brev is never contacted.")
     print()
 
     trips = not args.no_llm
-    # With a backup configured, a down primary is a warning: the agents fail over.
-    primary_ok = check_endpoint(primary, settings, ENV_FILE, r, soft=backup is not None, round_trip=trips)
-    backup_ok = False
-    if backup is not None:
-        backup_ok = check_endpoint(backup, settings, ENV_FILE, r, soft=False, round_trip=trips and (args.backup or not primary_ok))
-        if not primary_ok and backup_ok:
-            r.warn("The primary isn't ready, so the agents will run on the backup until it is.")
+    serving = None  # the first tier that passes: the one the agents start on
+    for i, t in enumerate(tiers):
+        # A broken tier with another after it is a warning: the agents fail over past it.
+        ready = check_endpoint(t, settings, ENV_FILE, r, soft=i < len(tiers) - 1, round_trip=trips and (args.all or serving is None))
+        if ready and serving is None:
+            serving = t
     if not trips:
         r.skip("Model round trips skipped (--no-llm)")
-    if not primary_ok and not backup_ok:
+    if not tiers:
+        r.fail("No model tier is enabled", "With LLM_FREE_ONLY=true, SUPER_MODEL and ULTRA_MODEL must end in :free")
+    elif serving is None:
         r.failed = True
+    elif serving is not tiers[0]:
+        r.warn(f"{tiers[0].role} isn't ready, so the agents will start on {serving.role} until it is.")
 
     from .budget import Budget
 

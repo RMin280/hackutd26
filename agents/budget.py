@@ -179,15 +179,17 @@ def _locked(lock: Path, timeout: float = 10.0) -> Iterator[None]:
         try:
             fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
             break
-        except FileExistsError:
+        except (FileExistsError, PermissionError):  # Windows reports a lock file being deleted as access denied
             try:  # a lock older than a minute was left by a crashed process
                 if time.time() - lock.stat().st_mtime > 60:
                     lock.unlink(missing_ok=True)
                     continue
-            except FileNotFoundError:
-                continue
+            except OSError:  # gone, or going: try again shortly
+                pass
             if time.monotonic() > deadline:
-                raise BudgetExceeded("The usage ledger is locked by another agent; refusing to spend blind.") from None
+                raise BudgetExceeded(
+                    f"Couldn't lock the usage ledger in {timeout:.0f} s (another agent holds it, or its folder isn't writable); refusing to spend blind."
+                ) from None
             time.sleep(0.05)
     try:
         yield

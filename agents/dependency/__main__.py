@@ -1,6 +1,6 @@
 """Run the dependency agent's storyline on the simulated hall (the fixer runs alongside).
 
-    python -m agents.dependency              # Nemotron: Brev primary, OpenRouter free backup
+    python -m agents.dependency              # Nemotron: Brev, then the free Super and Ultra on OpenRouter
     python -m agents.dependency --scripted   # scripted stand-in, no model requests
 """
 
@@ -29,8 +29,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         settings = load_settings()
         model = ModelRouter(settings)
-        backup = settings.backup.label if settings.backup else "none"
-        print(f"Model: primary {settings.primary.label}; backup {backup}")
+        print(f"Model tiers: {settings.tiers_label}")
 
     _, dependency, fixer = run_demo(model)
 
