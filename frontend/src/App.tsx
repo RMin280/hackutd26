@@ -7,6 +7,7 @@ import { StatTiles } from './ui/StatTiles';
 import { DecisionFeed } from './ui/DecisionFeed';
 import { DetailCard } from './ui/DetailCard';
 import { clock } from './ui/format';
+import { liveEnabled } from './live/config';
 import { IconChevron, IconTarget } from './ui/Icons';
 
 const AUTOPLAY_MS = 4200;
@@ -34,7 +35,8 @@ function TopBar() {
       </p>
       <div className="topbar-end">
         <p className="sim-clock">
-          <span className="sim-clock-value">{stepIndex < 0 ? 'T+0m' : clock(now)}</span>simulated
+          {/* Live: the backend's clock, which agents and the presenter move outside the steps too. */}
+          <span className="sim-clock-value">{stepIndex < 0 && !liveEnabled ? 'T+0m' : clock(now)}</span>simulated
         </p>
         <button
           className="icon-btn"

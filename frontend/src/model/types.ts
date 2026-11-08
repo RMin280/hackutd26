@@ -108,7 +108,7 @@ export type FocusTarget =
   | { kind: 'racks'; ids: string[]; parts?: string[] }
   | { kind: 'overview' };
 
-export type ActorKind = 'facility' | 'scheduler' | 'cooling' | 'fixer' | 'squawk';
+export type ActorKind = 'facility' | 'scheduler' | 'cooling' | 'fixer' | 'updater' | 'squawk';
 
 export interface DecisionEvent {
   seq: number;

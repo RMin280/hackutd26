@@ -1,5 +1,6 @@
-// Popups over the hall while the Nemotron fixer agent does a software fix: its plan, each step
-// as it happens, and how it ended (fixed, handed off, stopped). Hardware repairs are the tech
+// Popups over the hall while a Nemotron agent does a software fix (the fixer on an issue, the
+// update agent on an advisory's waves): its plan, each step as it happens, and how it ended
+// (fixed, handed off, stopped). Hardware repairs are the tech
 // gull's (Tech.tsx); these are the fixes no one walks to. What's shown is the agent's own rows
 // in the decision feed (fixes.ts), so the view still decides nothing.
 
@@ -9,7 +10,7 @@ import { useStore } from '../store';
 import { label } from '../mock/site';
 import type { FocusTarget, Site } from '../model/types';
 import { HALL, RACK, rackBase, type PartBox, type Vec3 } from './layout';
-import { softwareFixes, type Fix, type FixStatus } from './fixes';
+import { isOpen, softwareFixes, type Fix, type FixAgent, type FixStatus } from './fixes';
 
 /** A finished fix stays up this long, a fix that has gone quiet this long. */
 const LINGER_MS = 7000;
@@ -43,10 +44,13 @@ function anchor(site: Site, layout: Record<string, PartBox>, f: FocusTarget): Ve
   }
 }
 
+const AGENT_NAME: Record<FixAgent, string> = { fixer: 'Nemotron fixer', updater: 'Nemotron updater' };
+
 const subjectName = (site: Site, s: string) => (site.parts[s] ? label(s) : s);
 
 const FOOT: Record<FixStatus, { text: string; tone: string }> = {
   working: { text: 'Fixing', tone: 'azure' },
+  waiting: { text: 'Next wave once these windows end', tone: 'azure' },
   fixed: { text: 'Fixed', tone: 'azure' },
   handoff: { text: 'Handed off', tone: 'gold' },
   stopped: { text: 'Stopped: failed closed', tone: 'gold' },
@@ -77,7 +81,7 @@ export function FixerPopups({ layout }: { layout: Record<string, PartBox> }) {
 
   const shown = fixes.filter((f) => {
     const at = changed.current.get(f.key)?.at ?? now;
-    return now - at < (f.status === 'working' ? QUIET_MS : LINGER_MS);
+    return now - at < (isOpen(f.status) ? QUIET_MS : LINGER_MS);
   });
 
   // Tick only while something is up, so finished popups go away on their own.
@@ -104,12 +108,13 @@ function FixPopup({ fix, name, at }: { fix: Fix; name: string; at: Vec3 }) {
     <Html position={at} center zIndexRange={[2, 0]} pointerEvents="none">
       <div className={`fix-pop fix-pop-${fix.status}`}>
         <div className="fix-pop-head">
-          <span className="fix-pop-agent">Nemotron fixer</span>
+          <span className="fix-pop-agent">{AGENT_NAME[fix.agent]}</span>
           <span className="fix-pop-subject">{name}</span>
         </div>
         <ol className="fix-pop-lines">
-          {fix.lines.map((l, i) => (
-            <li key={l.seq} className={working && i === fix.lines.length - 1 ? 'is-current' : undefined}>
+          {/* Between waves only what it last did (the footer says it waits): several advisories can wait at once. */}
+          {(fix.status === 'waiting' ? fix.lines.slice(-2, -1) : fix.lines).map((l, i, shown) => (
+            <li key={l.seq} className={working && i === shown.length - 1 ? 'is-current' : undefined}>
               {l.text}
             </li>
           ))}

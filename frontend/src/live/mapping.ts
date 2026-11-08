@@ -159,7 +159,7 @@ const byOrd = <T extends { ord: number }>(a: T, b: T) => a.ord - b.ord;
 const byId = <T extends { id: bigint }>(a: T, b: T) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 const newest = <T extends { id: bigint }>(rows: T[]): T | undefined => rows.reduce<T | undefined>((m, r) => (!m || r.id > m.id ? r : m), undefined);
 
-const ACTOR_KINDS: ActorKind[] = ['facility', 'scheduler', 'cooling', 'fixer', 'squawk'];
+const ACTOR_KINDS: ActorKind[] = ['facility', 'scheduler', 'cooling', 'fixer', 'updater', 'squawk'];
 const VERDICTS: Verdict[] = ['allow', 'warn', 'deny', 'failure', 'shared_cause', 'isolated', 'placement', 'info', 'plan', 'fixed', 'handoff'];
 
 /** The facility map. Rebuild only when parts, racks, nodes or downstream rows are added or removed. */
