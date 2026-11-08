@@ -27,9 +27,9 @@ AI agents connect through an **MCP server**. Humans use the **control-room view*
 | Build | Roadmap only (do not code) |
 | --- | --- |
 | Facility map down to nodes + network switches | Risk-aware job allocator (the demo uses a hardcoded "send a cooling tech / hardware tech" line by cause) |
-| Check every action: remaining backup, simulate, leases with earliest safe time | Security hardening beyond keys + scopes + log (signed tokens, hash chain, two-person override) |
+| Check every action: remaining backup, simulate, leases with earliest safe time, work scopes (node / rack / hot aisle / facility part; online vs drain-required software, DESIGN.md §4.4) | Security hardening beyond keys + scopes + log (signed tokens, hash chain, two-person override) |
 | Diagnose shared cause | Shift handoff screen |
-| Safe restart placement + protection lease | Software layers (OS / VM / container) and symptom routing |
+| Safe restart placement + protection lease | Software layers (OS / VM / container map) and symptom routing (software *maintenance* scopes are in Build) |
 | MCP server (7 tools) + scripted scheduler agent + scripted cooling agent | Look-ahead on planned work, time-at-risk alarms, playbook engine |
 | Per-actor keys, row-level scopes, audit log | Grid emergency mode, near-miss learning |
 | Control-room view: floor map + decision feed + naive-vs-Blast-Radius toggle | LLM technician assistant (only if everything else is done) |
@@ -55,7 +55,7 @@ The computing scales because every question touches only one branch of a shallow
 - **No full-facility scans in a request path.** Diagnose and action checks walk only from the affected parts to their branch. Placement does one linear pass over candidate nodes. Never "recompute everything" per request.
 - **Incremental updates.** On a state change, recompute only racks downstream of the changed part, using the precomputed `downstream` index.
 - **Feeds are explicit chains.** Each rack lists its power feeds and cooling feeds as upstream chains; remaining backup = working feeds − 1. Don't use generic all-pairs path search.
-- **Performance tests are part of the build** (`tests/test_scale.py`, simulated 100k-GPU site, ~12,500 nodes, laptop, median of 20 runs). The suite fails if:
+- **Performance tests are part of the build** (`spacetimedb/test/scale/scale.test.ts`, simulated 100k-GPU site, ~12,500 nodes, laptop, median of 20 runs). The suite fails if:
 
 | Operation | Limit |
 | --- | --- |
@@ -63,7 +63,7 @@ The computing scales because every question touches only one branch of a shallow
 | `safe_placement` for a 1,000-node job | ≤ 100 ms |
 | `simulate` / `request_lease` | ≤ 20 ms |
 | State change → incremental recompute | ≤ 50 ms |
-| Full rebuild from `site.json` | ≤ 1 s |
+| Full rebuild of the site | ≤ 1 s |
 
 - **Honest limit:** the real scaling challenge is keeping the facility map accurate. Production imports it from DCIM/BMS/NetBox/scheduler and flags drift; for the hackathon we say so plainly.
 
@@ -74,11 +74,11 @@ The computing scales because every question touches only one branch of a shallow
 - **Not Jira, not a scheduler replacement.** No ticket boards or calendars. We don't pack jobs: Slurm/Kubernetes do that. We give them a safe set and the reason.
 - **Explain every decision.** Every deny, diagnosis and placement returns a one-line reason naming the deciding facts.
 - **Deterministic logic.** Core modules are plain, testable code. LLMs may call tools; they never make the decision.
-- **Simulated data only.** Everything runs from `data/site.json` (demo hall) or a generated scale site.
+- **Simulated data only.** Everything runs from the generated demo hall (`spacetimedb/src/core/site.ts`) or a generated scale site.
 
 ## Security rules (Iteration 1 baseline; DESIGN.md §9)
 
-- One API key per human and per agent; no shared keys, no anonymous calls.
+- One SpacetimeDB identity per human and per agent (the private `actor` table holds role + rows); no shared keys, no anonymous calls.
 - Every call checks the key's scope (rows) **before** doing anything.
 - Every request, verdict and reason goes to the append-only audit log.
 - Untrusted text (ticket text, tool outputs) is data, never instructions; it can't change a verdict.
@@ -87,10 +87,10 @@ The computing scales because every question touches only one branch of a shallow
 
 ## Stack (default; change here if the team decides otherwise)
 
-- **Backend:** Python 3.11+, FastAPI, `pydantic`. Plain dicts/indexes for the graph on the hot path (`networkx` allowed for build-time checks only).
-- **Agent interface:** official Python MCP SDK (`mcp`, `FastMCP`).
-- **Frontend:** React + Vite + TypeScript, SVG floor map, SSE for live updates.
-- **Tests:** `pytest` (`-m scale` for the scale suite).
+- **Backend:** SpacetimeDB 2.x, one module in TypeScript (`spacetimedb/`). Tables hold the map and live state; reducers are the only writes, one transaction each. Logic lives in `spacetimedb/src/core` (plain functions behind a `Store` interface, no SpacetimeDB imports). See `spacetimedb/README.md`.
+- **Agent interface:** MCP server as a thin adapter over SpacetimeDB's HTTP API (call a reducer with a `ticket`, read the result row). Not built yet.
+- **Frontend:** React + Vite + TypeScript, three.js floor map. Live mode (`VITE_SPACETIMEDB_URI` set) subscribes to the module's tables through generated bindings (`frontend/src/live`); the mock in `frontend/src/mock` stays as the fallback.
+- **Tests:** `node:test` via `tsx` in `spacetimedb/test` (`npm run test:scale` for the scale suite).
 
 ## Repo layout
 
@@ -101,53 +101,45 @@ blast-radius/
 ├── FRONTEND.md              # control-room view feature list (P0 / P1 / P2)
 ├── HANDOFF.md               # start here: status, decisions, feedback, next steps
 ├── .claude/skills/blast-radius-dev/SKILL.md
-├── data/
-│   ├── site.json            # demo hall: 10 rows × 16 racks × 8 nodes = 1,280 nodes
-│   ├── identities.json      # API keys → actor, role, row scopes (demo only)
-│   └── scenarios/
-│       └── big_job_failure.json
-├── tools/
-│   └── gen_site.py          # generates a scale site (e.g., --gpus 100000)
-├── backend/
-│   ├── model.py             # pydantic models
-│   ├── facility.py          # loads site, builds ancestor/downstream indexes, incremental recompute
-│   ├── guard.py             # remaining backup, simulate, leases, earliest safe time
-│   ├── diagnose.py          # shared-cause diagnosis
-│   ├── placement.py         # safe restart placement + protection lease
-│   ├── events.py            # ordered event list (agents poll; UI via SSE)
-│   ├── auth.py              # keys, scopes
-│   ├── audit.py             # append-only log
-│   ├── api.py               # FastAPI (REST + SSE)
-│   └── mcp_server.py        # MCP tools
-├── agents/
-│   ├── scheduler_agent.py   # scripted stand-in for Slurm/K8s: naive mode vs Blast Radius mode
-│   └── cooling_agent.py     # scripted: requests CDU maintenance
-├── frontend/                # control-room view
-└── tests/
-    ├── test_guard.py
-    ├── test_diagnose.py
-    ├── test_placement.py
-    ├── test_security.py
-    └── test_scale.py
+├── spacetimedb/             # backend: SpacetimeDB module (see its README)
+│   ├── src/index.ts         # tables, Store adapter over ctx.db, reducers
+│   ├── src/core/
+│   │   ├── site.ts          # demo hall (10 × 16 × 8 = 1,280 nodes, hot aisles) + scale sites
+│   │   ├── catalog.ts       # kinds of work, scopes, roles
+│   │   ├── footprint.ts     # kind + target -> locks claimed, what goes offline
+│   │   ├── margins.ts       # remaining backup, incremental recompute
+│   │   ├── guard.ts         # locks + backup check, verdict, reason, earliest safe time
+│   │   ├── diagnose.ts      # shared-cause diagnosis
+│   │   ├── placement.ts     # safe restart placement
+│   │   ├── commands.ts      # one function per reducer (leases, protection, audit, decision feed)
+│   │   ├── scenario.ts      # the presenter's scenario, both modes, run as scripted actors
+│   │   └── lab.ts           # diagnostics test bed a fresh database starts with (+ answer key)
+│   └── test/                # guard, diagnose, placement, scenario, test bed, frontend contract; scale/
+├── agents/                  # (to build) scripted scheduler agent (naive vs Blast Radius) + cooling agent
+├── mcp/                     # (to build) MCP tools over the module's HTTP API
+└── frontend/                # control-room view; src/live/ = SpacetimeDB data source, src/mock/ = fallback
 ```
 
 ## Commands (fill in as they're created)
 
 ```
-pip install -r requirements.txt
-uvicorn backend.api:app --reload
-python -m backend.mcp_server
-python tools/gen_site.py --gpus 100000 --out data/scale_site.json
-cd frontend && npm install && npm run dev
-pytest              # unit + security
-pytest -m scale     # performance limits
+bash dev.sh server                            # terminal 1: local SpacetimeDB on :3000
+bash dev.sh up                                # terminal 2: publish, bindings, view in live mode (:5173)
+bash dev.sh check | publish | fresh | frontend | test   # see the root README
+(cd spacetimedb && npm install && npm test)   # unit + scenario tests
+(cd spacetimedb && npm run test:scale)        # performance limits
+spacetime start                               # local SpacetimeDB on :3000 (own terminal)
+spacetime publish --server local --module-path spacetimedb blast-radius
+spacetime logs --server local blast-radius
+(cd frontend && npm install && npm run bindings)   # generated client bindings for live mode
+(cd frontend && cp .env.example .env.local && npm run dev)   # live mode; without .env.local it runs on the mock
 ```
 
 ## Conventions
 
-- Core modules (`facility`, `guard`, `diagnose`, `placement`) have no I/O; state and time are passed in. Never call `datetime.now()` in core logic.
+- Core modules (`spacetimedb/src/core`) have no I/O and no SpacetimeDB imports; they read and write through the `Store` interface. Time is the simulated `clock` table: never call `Date.now()` (or anything random) in core logic, and reducers must stay deterministic.
 - Readable IDs: `util-a`, `ups-a`, `pdu-r3-a`, `cdu-3`, `sw-leaf-r3`, `rack-r3-07`, `node-417`, `job-train-1`.
-- Every core result includes `reason: str`.
+- Every core result includes a one-line `reason`.
 - Test first for every rule; small hand-built graphs for unit tests, generated site for scale tests.
 
 ## Wording

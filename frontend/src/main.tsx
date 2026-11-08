@@ -6,3 +6,6 @@ import App from './App';
 
 // No StrictMode: it double-runs effects in dev, which would double-step autoplay.
 createRoot(document.getElementById('root')!).render(<App />);
+
+// Live mode (VITE_SPACETIMEDB_URI set, see .env.example): the SpacetimeDB backend feeds the view.
+if (import.meta.env.VITE_SPACETIMEDB_URI) void import('./live/connection').then((m) => m.startLive());

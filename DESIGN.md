@@ -1,6 +1,6 @@
 # Blast Radius: Design
 
-*Status: v0.4, 2026-11-07. Locked scope, big-job failure story, scalability built in.*
+*Status: v0.5, 2026-11-07. Locked scope, big-job failure story, scalability built in. Backend on SpacetimeDB; work scopes and concurrency rules added (§4.4).*
 
 ## 1. Summary
 
@@ -28,7 +28,7 @@ Everything is deterministic: no prediction, no ML, no sensor trends. Every answe
 
 Not addressed on purpose: sensor dashboards, alarm aggregation, failure prediction, job packing (Slurm/Kubernetes do that).
 
-## 3. Facility model (`data/site.json`)
+## 3. Facility model (`spacetimedb/src/core/site.ts`)
 
 ### 3.1 Parts
 
@@ -82,12 +82,12 @@ On a state change to part `p`, only `downstream[p]` racks are recomputed. Nothin
 
 ### 3.4 Demo hall
 
-10 rows × 16 racks × 8 nodes = **1,280 nodes**. Power A/B per row. Each CDU serves 5 racks as primary, with a neighbouring CDU as backup. One leaf switch per row.
+10 rows × 16 racks × 8 nodes = **1,280 nodes**. Power A/B per row. Each CDU serves 5 racks as primary, with a neighbouring CDU as backup. One leaf switch per row. Rows pair up back-to-back around an enclosed hot aisle: `ha-1` = Rows 1–2 … `ha-5` = Rows 9–10.
 
 - `job-train-1`: a 1,000-node training job across Rows 1–8.
 - Other tenants fill some remaining nodes; about 150 spares are available in Rows 9–10 and scattered elsewhere.
 
-## 4. Action check (`guard.py`)
+## 4. Action check (`guard.ts`)
 
 ### 4.1 `simulate(action)`
 
@@ -117,14 +117,37 @@ Leases auto-expire and are written to the audit log.
 
 ### 4.3 Events
 
-Ordered list: `{seq, time, type, parts, racks, jobs, reason}`. Types: `state_change`, `margin_change`, `diagnosis`, `placement`, `lease_granted`, `lease_denied`. Agents **poll** `get_events(since)`; the UI receives the same events over SSE.
+Ordered list (the `decision` table): `{seq, atMin, actor, title, verdict, reason, focus}`, one row per request, verdict, diagnosis, placement and state change. The view and connected agents **subscribe** to it and SpacetimeDB pushes new rows; agents without a live connection read it by `seq`.
 
-## 5. Failure diagnosis (`diagnose.py`)
+### 4.4 Work scopes and concurrency
+
+Every request names a **kind** of work and a **target**. The kind sets the scope: which locks it claims for its window, whether it can share nodes with running jobs, and what it takes offline.
+
+| Kind | Target | Scope | Runs alongside jobs? | Effect on backup |
+| --- | --- | --- | --- | --- |
+| `node_repair` (GPU, DIMM, PSU swap) | node | the node | No: drain it first | node offline |
+| `rack_work` (rack power strip, ToR, rear door) | rack | the rack and its nodes | No | its nodes offline |
+| `hot_aisle_work` (containment, busway) | `ha-N` | both rows of the aisle | Yes | every rack in both rows loses one cooling feed of headroom |
+| `facility_work` (CDU, chiller, PDU, UPS, switchgear, leaf/spine swap) | part | the part and every rack below it | Power/cooling: the backup check decides. Leaf/spine: no | racks below lose that feed |
+| `switch_firmware` (leaf/spine OS upgrade) | leaf/spine | every node below the switch | No | nodes below unreachable |
+| `sw_online` (agent update, live patch, staged firmware) | node, rack, row, job | those nodes | **Yes** | none |
+| `sw_exclusive` (OS/kernel + reboot, GPU driver, BIOS/BMC/NIC firmware) | node, rack, row | those nodes | **No: runs alone** | nodes offline |
+
+Rules, checked in this order (every rule is a lookup on the work's own footprint, never a facility scan):
+
+1. **Scope:** the actor's rows must cover where the work happens (central plant parts need every row).
+2. **Locks.** Hands-on hardware claims space exclusively: node ⊂ rack ⊂ hot aisle, and a bigger claim covers everything inside it (intent claims on the rack and aisle above). All maintenance on one node is one at a time. Running jobs and tenants hold their nodes; only `sw_online` and `hot_aisle_work` may share them. Facility work claims its part. Two claims conflict when their windows overlap unless both are shared (protection) or both are intent.
+3. **Backup:** §4.1 with every live lease that overlaps the window applied, recomputing only racks below the parts taken offline or in the opened aisle. Red, or a protected rack below full backup → deny. One failure from an outage → warn.
+4. **Protection lease** (§6.3) is a shared claim on the job's racks: hands-on work there and anything that drops their backup is refused for its window; online updates still run.
+
+Deny returns the reason and the earliest safe time: the first start at which the same work passes, or "after CDU-3 repair" when it waits on a repair or a drain. Warn waits for a shift lead; approval re-checks the facility. SpacetimeDB runs each request as one transaction, so two simultaneous requests for the same backup are decided one after the other.
+
+## 5. Failure diagnosis (`diagnose.ts`)
 
 Input: failed node(s), plus the recent failure window (default 2 h of simulated time).
 
 1. Collect `ancestors[node]` for each failed node: about 10 parts each.
-2. **Shared cause** = any ancestor that is not `ok`, **or** an ancestor common to ≥ 2 failures in the window.
+2. **Shared cause** = any ancestor that is not `ok`, **or** an ancestor common to ≥ 2 failures in the window. Only row-level parts (PDU, CDU, leaf) count for the second rule: central plant (UPS, utility, chillers, spines) sits above most of the hall, so sharing it is no evidence. With several candidates, a broken part wins, then the most shared, then the most specific (fewest racks below), then the one with no backup.
 3. If one is found:
    - `classification: "shared_cause"`, `cause: "cdu-3"`.
    - `at_risk`: other nodes of the same job under that cause (`downstream[cause] ∩ job_nodes[job]`).
@@ -134,7 +157,7 @@ Input: failed node(s), plus the recent failure window (default 2 h of simulated 
 
 It's deterministic and uses only what has already failed or degraded. It never forecasts.
 
-## 6. Safe placement (`placement.py`)
+## 6. Safe placement (`placement.ts`)
 
 ### 6.1 Input
 
@@ -170,9 +193,9 @@ After restart, the scheduler agent requests a **protection lease** on the job's 
 - **No packing.** The hard optimization stays with Slurm/Kubernetes.
 - **Low event rate.** Even at Meta's failure rate, a 100k-GPU site sees dozens of failures a day.
 
-### 7.2 Performance limits (enforced by `tests/test_scale.py`)
+### 7.2 Performance limits (enforced by `spacetimedb/test/scale/scale.test.ts`)
 
-Scale site: `tools/gen_site.py --gpus 100000` gives ~12,500 nodes, ~1,560 racks, plus power/cooling/network parts. Measured as the median of 20 runs on a laptop.
+Scale site: `scaleSpec(100000)` in `site.ts` gives 12,544 nodes, 1,568 racks, plus power/cooling/network parts. Measured as the median of 20 runs on a laptop.
 
 | Operation | Limit |
 | --- | --- |
@@ -208,6 +231,8 @@ These numbers go in the pitch once measured: *"On a simulated 100,000-GPU site, 
 
 Every call carries an API key; scope is checked first; every call is logged.
 
+On SpacetimeDB each tool maps to a reducer or a table read: `simulate` = `request_work` with `dry_run`, `request_lease` = `request_work` / `request_protection`, `release_lease` = `release_work`, `get_events` = the `decision` table by `seq`, `check_risk` = the `margin`, `work` and `claim` tables. The MCP server is a thin adapter over SpacetimeDB's HTTP API: it calls the reducer with a `ticket`, then reads the result row from `work`.
+
 ### 8.1 Demo agents
 
 - **Scheduler agent** (scripted stand-in for Slurm/Kubernetes):
@@ -220,7 +245,7 @@ Every call carries an API key; scope is checked first; every call is logged.
 
 Blast Radius approves or blocks physical actions and holds a map of every weak point, so it's built like a control plane from day one.
 
-- **Identity:** one API key per human and per agent (`data/identities.json` for the demo). No shared keys; no anonymous calls.
+- **Identity:** one SpacetimeDB identity per human and per agent; the private `actor` table maps it to a role and rows. No shared keys; no anonymous calls.
 - **Scope:** each key lists allowed rows and a role (`technician`, `shift_lead`, `scheduler_agent`, `cooling_agent`, `viewer`). Scope is checked before any work.
 - **Audit log:** append-only; every request, verdict, lease and reason, with actor and time.
 - **Untrusted text:** free text never changes a verdict; tools take structured actions only.
@@ -250,12 +275,16 @@ No charts and no sensor readings.
    - `diagnose_failure(node-417)` → shared cause `cdu-3`; 39 other job nodes at risk; send a mechanical tech to CDU-3.
    - `safe_placement` → 40 replacement nodes in Rows 9–10 on separate cooling and power, full backup.
    - The scheduler restarts and takes a protection lease on the job's racks.
-   - T+30m: the cooling agent requests maintenance on `cdu-4`. **Denied**: "CDU-4 is the only cooling feed for 5 racks (CDU-3 degraded); taking it offline makes them red. Earliest safe time: after CDU-3 repair."
+   - T+30m: the cooling agent requests maintenance on `cdu-4`. **Denied**: "CDU-4 is the only cooling feed for 5 racks (CDU-3 degraded); taking it offline makes them red. It would also drop 5 racks protected for job-train-1 below full backup. Earliest safe time: after CDU-3 repair, and not before T+72h13m."
 6. Result shown: one restart instead of repeated crashes, and no second outage.
 
 ### 10.3 Minimum demo (protect above everything)
 
 Steps 5a, 5b and 5d. Everything else is a bonus.
+
+### 10.4 Backend scenario runner and diagnostics test bed
+
+The scenario runs on the backend (`scenario_start` / `scenario_next` / `scenario_goto`): each step acts as a scripted actor through the normal reducers, and the view only renders the tables. A fresh database instead holds a **diagnostics test bed**: the demo hall at T+3h with five incidents (degraded CDU, failed PDU, two correlated failures under a leaf with no alarm, an isolated node with an older failure outside the window, a tenant node under a failed CDU). The private `incident` table is the answer key for grading diagnostic agents. Details: `spacetimedb/README.md`.
 
 ## 11. Roadmap (not built this weekend)
 
@@ -264,7 +293,7 @@ Steps 5a, 5b and 5d. Everything else is a bonus.
 | 2: Enforcement + security | Signed lease tokens verified by equipment systems; hash-chained log; two-person override; break-glass; abuse rules; prompt-injection handling for an LLM assistant |
 | 3: Risk-aware job allocator | People and agents scored on skills, certs, seniority, workload and current risk; agent trust levels (act alone / propose / assist); coverage gaps |
 | 4: Ahead-of-time checks | Look-ahead on planned leases; time-at-risk escalation; playbook engine; shift handoff screen |
-| 5: Software layers | OS / VM / container in the map; symptom routing to physical causes |
+| 5: Software layers | OS / VM / container in the map; symptom routing to physical causes (software *maintenance* scopes, online vs drain-required, are already in Iteration 1: §4.4) |
 | 6: Production | Grid emergency mode; near-miss learning; DCIM/BMS/NetBox/Slurm import with drift checks; SSO/mTLS; multi-site; push events |
 
 New ideas go into this table, not into the code.
@@ -272,6 +301,9 @@ New ideas go into this table, not into the code.
 ## 12. Testing
 
 - **Guard:** margins on hand-built racks (2 feeds, 1 feed, 0 feeds); simulate verdicts; overlapping and back-to-back leases; protection lease blocks maintenance.
+- **Test bed:** every incident diagnoses to its answer key.
+- **Contract:** the backend scenario, mapped through the view's `live/mapping.ts`, equals the frontend mock at every step.
+- **Scopes:** node, rack and hot-aisle claims exclude each other; two node repairs in one rack don't; online updates share nodes with jobs, drain-required ones don't; one maintenance item per node; hot-aisle work costs a cooling feed of headroom.
 - **Diagnose:** a degraded ancestor is found; a common ancestor across two failures is found; an isolated failure is classified isolated; the at-risk set is correct.
 - **Placement:** excludes at-risk, yellow/red racks, booked maintenance and busy nodes; prefers locality; reports a shortfall.
 - **Security:** missing or invalid key refused; out-of-scope row refused; every call logged; free text doesn't change verdicts.
@@ -281,5 +313,5 @@ New ideas go into this table, not into the code.
 ## 13. Open questions
 
 - Team owners for the four build areas, and who owns "no" on scope?
-- Confirm stack (default: Python + FastAPI + MCP SDK, React + Vite).
+- ~~Confirm stack~~ Decided: SpacetimeDB (TypeScript module) backend, React + Vite + TS frontend.
 - Should the demo hall be bigger to show more spares? (Default: 1,280 nodes.)
