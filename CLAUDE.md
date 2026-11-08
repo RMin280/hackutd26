@@ -102,6 +102,7 @@ blast-radius/
 ├── DESIGN.md
 ├── FRONTEND.md              # control-room view feature list (P0 / P1 / P2)
 ├── HANDOFF.md               # start here: status, decisions, feedback, next steps
+├── MERGE.md                 # what the frontend and SpacetimeDB branches add to show the agents' work
 ├── .claude/skills/blast-radius-dev/SKILL.md
 ├── data/
 │   ├── site.json            # demo hall: 10 rows × 16 racks × 8 nodes = 1,280 nodes

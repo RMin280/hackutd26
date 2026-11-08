@@ -27,6 +27,7 @@ In plain words:
 | `.claude/skills/blast-radius-dev/SKILL.md` | Step-by-step workflow Claude Code follows when changing code | **Current** |
 | `three-playground.html` | Standalone three.js sandbox of the demo hall that plays the story with 4 buttons. Exploration only | Prototype |
 | `agents/` | Nemotron model router (Brev primary, OpenRouter free backup), the fixer agent for low-criticality issues, a simulated Blast Radius it runs on, and the SpacetimeDB contract in `agents/README.md` | **Current** (branch `nemotron-init`) |
+| `MERGE.md` | What the frontend and SpacetimeDB branches need to add for the agents' work to show up, plus merge notes for `nemotron-init` | **Current** (branch `nemotron-init`) |
 | Team doc: [Blast Radius — Team Pitch & Explainer](https://claude.ai/artifact/333tugs6RPJvKxT4egcKVG) | Explainer for teammates | **Partly outdated:** the demo plan section is current; the story and pitch sections still tell the old "3am battery" version. Use the pitch in §6 below. |
 
 **If documents disagree, `DESIGN.md` wins, then `CLAUDE.md`.**
