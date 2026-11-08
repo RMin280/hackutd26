@@ -22,6 +22,10 @@ import type {
   Verdict,
   World,
 } from '../model/types';
+import type { Mode } from '../mock/scenario';
+
+/** The backend's scenario keys (spacetimedb/src/core/scenario.ts MODES). */
+const MODES: readonly Mode[] = ['naive', 'squawk', 'updates', 'maintenance'];
 
 // Row shapes as the generated bindings expose them (column names in camelCase).
 // u64 columns arrive as bigint.
@@ -311,7 +315,7 @@ export function toEvents(rows: DecisionRow[]): DecisionEvent[] {
 }
 
 export interface ScenarioView {
-  mode: 'naive' | 'squawk';
+  mode: Mode;
   bed: string;
   stepIndex: number;
   total: number;
@@ -322,7 +326,7 @@ export interface ScenarioView {
 
 export function toScenario(row: ScenarioRow | undefined): ScenarioView {
   return {
-    mode: row?.mode === 'naive' ? 'naive' : 'squawk',
+    mode: row && (MODES as readonly string[]).includes(row.mode) ? (row.mode as Mode) : 'squawk',
     bed: row?.bed ?? 'demo',
     stepIndex: row?.step ?? -1,
     total: row?.total ?? 0,

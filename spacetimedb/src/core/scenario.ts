@@ -1,12 +1,24 @@
-// The presenter's "big job failure" scenario (DESIGN.md §10.2), run by the backend.
-// Same steps, times, titles and captions as frontend/src/mock/scenario.ts, so the
-// view's step list still lines up. Each step acts through the normal commands as a
-// scripted actor (Facility, Scheduler, Cooling agent...), so the decision feed and
-// the audit log read exactly as if those agents had called the reducers themselves.
+// The presenter's scenarios, run by the backend. Each step acts through the normal commands
+// as a scripted actor (Facility, Scheduler, Cooling agent...), so the decision feed and the
+// audit log read exactly as if those agents had called the reducers themselves.
+//
+//   naive / squawk  "Big job failure" (DESIGN.md §10.2), the same story in both scheduler modes.
+//                   Same steps, times, titles and captions as frontend/src/mock/scenario.ts.
+//   updates         "Software updates": online vs drain-required updates, switch firmware, two
+//                   updates on one node, a spare that comes back degraded (DESIGN.md §4.4).
+//   maintenance     "Maintenance window": protection, hot-aisle and facility work, an approval,
+//                   a failed spare, and a protection lease left behind by a finished job.
+//
+// The last two set up work for the Nemotron fixer agent (DESIGN.md §8.2) and leave it to the
+// agent: routine requests refused for now (maintenance_refused), a broken spare (broken_node)
+// and a stale protection lease (stale_protection). The scenario never does the fixer's job.
+// The view lists their steps (frontend/src/mock/scenario.ts) but runs them only in live mode.
 
 import {
   advanceTo,
+  approveWork,
   diagnoseFailure,
+  finishJob,
   naiveRestart,
   reportNodeFailure,
   requestPlacement,
@@ -14,6 +26,7 @@ import {
   requestWork,
   restartJob,
   seed,
+  setNodeState,
   setPartState,
 } from './commands';
 import { CAN_DO } from './catalog';
@@ -22,8 +35,9 @@ import type { Store } from './store';
 import { label } from './text';
 import { RequestError, type ActorRow, type Role, type ScenarioRow } from './types';
 
-export type Mode = 'naive' | 'squawk';
-export const MODES: readonly Mode[] = ['naive', 'squawk'];
+/** A scenario key: the two scheduler modes of "Big job failure", then the operations scenarios. */
+export type Mode = 'naive' | 'squawk' | 'updates' | 'maintenance';
+export const MODES: readonly Mode[] = ['naive', 'squawk', 'updates', 'maintenance'];
 export const isMode = (m: string): m is Mode => (MODES as readonly string[]).includes(m);
 
 /** Built-in actors for scripted steps. Fixed hex identities no real client will ever have. */
@@ -39,6 +53,10 @@ export const SCRIPTED = {
   agent: scripted(3, 'Scheduler agent', 'scheduler_agent'),
   naive: scripted(4, 'Scheduler (naive)', 'scheduler_agent'),
   cooling: scripted(5, 'Cooling agent', 'cooling_agent'),
+  updates: scripted(6, 'Update agent', 'scheduler_agent'),
+  network: scripted(7, 'Network tech', 'technician'),
+  tech: scripted(8, 'Facility tech', 'technician'),
+  lead: scripted(9, 'Shift lead (on call)', 'shift_lead'),
 };
 
 export function ensureScriptedActors(s: Store): void {
@@ -54,6 +72,16 @@ const PROTECT_MIN = 72 * 60;
 
 export const INTRO_CAPTION =
   'Hall A at steady state. job-train-1 is training on 1,000 nodes in Rows 1–8, and every rack has full backup.';
+
+/** Each scenario's opening caption. */
+export const INTROS: Record<Mode, string> = {
+  naive: INTRO_CAPTION,
+  squawk: INTRO_CAPTION,
+  updates:
+    "Software updates in Hall A. job-train-1 trains on 1,000 nodes in Rows 1–8; tonight's queue has agent patches, GPU drivers and switch firmware.",
+  maintenance:
+    'Maintenance window in Hall A. job-train-1 trains on 1,000 nodes in Rows 1–8 while the facility techs work through their queue.',
+};
 
 interface Camera {
   kind: 'overview' | 'rack' | 'node' | 'part' | 'racks';
@@ -72,6 +100,8 @@ interface Step {
 
 const overview = (): Camera => ({ kind: 'overview', ids: [], parts: [] });
 const onNode = (id: string): Camera => ({ kind: 'node', ids: [id], parts: [] });
+const onRack = (id: string): Camera => ({ kind: 'rack', ids: [id], parts: [] });
+const onPart = (id: string): Camera => ({ kind: 'part', ids: [id], parts: [] });
 const onRacks = (ids: string[], parts: string[] = []): Camera => ({ kind: 'racks', ids, parts });
 
 /** Racks that CDU-3 cools as their primary feed (rack-r1-11 .. rack-r1-15). */
@@ -176,7 +206,7 @@ const squawk: Step[] = [
   },
   {
     at: 12,
-    title: 'Find a safe place to restart',
+    title: 'Find a safe restart',
     run: (s) => {
       const diagnosisId = s.scenario()!.diagnosisId;
       const id = requestPlacement(s, SCRIPTED.agent.identity, {
@@ -209,7 +239,7 @@ const squawk: Step[] = [
   },
   {
     at: 30,
-    title: 'Cooling agent asks for CDU-4',
+    title: 'Agent asks for CDU-4',
     run: (s) => {
       const w = requestWork(s, SCRIPTED.cooling.identity, {
         kind: 'facility_work',
@@ -247,7 +277,254 @@ const squawk: Step[] = [
   },
 ];
 
-export const STEPS: Record<Mode, Step[]> = { naive, squawk: squawk };
+// ---------------------------------------------------------------- software updates
+
+const DRIVER_RACK = 'rack-r9-04'; // free spares, but slots 0-2 run tenant-gamma
+const SPARE = 'node-1190'; // a free spare in rack-r10-05
+const LEAF = 'sw-leaf-r3'; // Row 3: job-train-1 below it
+const DRIVER = 'GPU driver 550 → 560';
+
+const verdictWord = (v: string) => (v === 'deny' ? 'Refused' : v === 'warn' ? 'Needs approval' : 'Allowed');
+
+const updates: Step[] = [
+  {
+    at: 0,
+    title: 'Online agent update on job-train-1',
+    run: (s) => {
+      const w = requestWork(s, SCRIPTED.updates.identity, {
+        kind: 'sw_online',
+        target: JOB,
+        startInMin: 0,
+        durationMin: 0,
+        dryRun: false,
+        ticket: 'scenario-agent-patch',
+        note: 'Monitoring agent 4.2.1 (live patch)',
+      });
+      return {
+        caption: `The update agent live-patches the monitoring agent on all ${JOB} nodes. ${verdictWord(w.verdict)}: an online update runs while the job keeps training.`,
+        camera: overview(),
+      };
+    },
+  },
+  {
+    at: 5,
+    title: `Driver update on ${label(DRIVER_RACK)}`,
+    run: (s) => {
+      const w = requestWork(s, SCRIPTED.updates.identity, {
+        kind: 'sw_exclusive',
+        target: DRIVER_RACK,
+        startInMin: 0,
+        durationMin: 0,
+        dryRun: false,
+        ticket: 'scenario-driver-rack',
+        routine: true,
+        note: DRIVER,
+      });
+      return {
+        caption: `It asks to update the GPU driver on ${label(DRIVER_RACK)}, which reboots every node. ${verdictWord(w.verdict)}: 3 of them run tenant-gamma. A routine request, so the fixer can queue it.`,
+        camera: onRack(DRIVER_RACK),
+      };
+    },
+  },
+  {
+    at: 6,
+    title: `Driver update on ${SPARE}`,
+    run: (s) => {
+      const w = requestWork(s, SCRIPTED.updates.identity, {
+        kind: 'sw_exclusive',
+        target: SPARE,
+        startInMin: 0,
+        durationMin: 0,
+        dryRun: false,
+        ticket: 'scenario-driver-spare',
+        note: DRIVER,
+      });
+      return {
+        caption: `On a free spare the same update is ${verdictWord(w.verdict).toLowerCase()}: ${SPARE} runs nothing, so it goes out of service for its 90-minute window.`,
+        camera: onNode(SPARE),
+      };
+    },
+  },
+  {
+    at: 8,
+    title: `Second update on ${SPARE}`,
+    run: (s) => {
+      const w = requestWork(s, SCRIPTED.network.identity, {
+        kind: 'sw_online',
+        target: SPARE,
+        startInMin: 0,
+        durationMin: 0,
+        dryRun: false,
+        ticket: 'scenario-nic-patch',
+        note: 'NIC firmware staging',
+      });
+      return {
+        caption: `A network tech tries to stage NIC firmware on ${SPARE} at the same time. ${verdictWord(w.verdict)}: one piece of work per node at a time. Earliest safe time: ${w.earliestSafe || 'now'}.`,
+        camera: onNode(SPARE),
+      };
+    },
+  },
+  {
+    at: 10,
+    title: `${label(LEAF)} firmware upgrade`,
+    run: (s) => {
+      const w = requestWork(s, SCRIPTED.network.identity, {
+        kind: 'switch_firmware',
+        target: LEAF,
+        startInMin: 0,
+        durationMin: 0,
+        dryRun: false,
+        ticket: 'scenario-leaf-fw',
+        routine: true,
+        note: 'Leaf OS 10.4 → 10.6',
+      });
+      const below = s.downstreamRacks(LEAF);
+      return {
+        caption: `The network tech asks to upgrade ${label(LEAF)}. ${verdictWord(w.verdict)}: the switch reboots and every node below it, ${JOB}'s included, drops off the network. Earliest safe time: ${w.earliestSafe || 'now'}.`,
+        camera: onRacks(below, [LEAF]),
+      };
+    },
+  },
+  {
+    at: 100,
+    title: `${SPARE} comes back degraded`,
+    run: (s) => {
+      setNodeState(s, SCRIPTED.facility.identity, SPARE, 'degraded');
+      return {
+        caption: `${SPARE}'s driver window ends, but it comes back degraded. A free spare on a healthy rack: routine work for the fixer agent, not a page.`,
+        camera: onNode(SPARE),
+      };
+    },
+  },
+  {
+    at: 120,
+    title: `${JOB} finishes`,
+    run: (s) => {
+      finishJob(s, SCRIPTED.scheduler.identity, JOB);
+      return {
+        caption: `${JOB} finishes and frees its 1,000 nodes. The ${label(LEAF)} firmware refused at T+10m is safe now: the fixer can rebook it. ${label(DRIVER_RACK)} still waits on tenant-gamma.`,
+        camera: onPart(LEAF),
+      };
+    },
+  },
+];
+
+// ---------------------------------------------------------------- maintenance window
+
+const WINDOW_MIN = 4 * 60;
+const UPS = 'ups-b';
+const PDU = 'pdu-r10-a';
+const AISLE = 'ha-1';
+const BROKEN = 'node-1118'; // a free spare in rack-r9-12
+
+const maintenance: Step[] = [
+  {
+    at: 0,
+    title: `Protect ${JOB}`,
+    run: (s) => {
+      const lease = requestProtection(s, SCRIPTED.scheduler.identity, JOB, WINDOW_MIN, 'scenario-window-protect');
+      return {
+        caption: `The scheduler locks ${JOB}'s ${lease.racks.length} racks with a 4 h protection lease: nothing may cut their backup while it trains.`,
+        camera: overview(),
+      };
+    },
+  },
+  {
+    at: 5,
+    title: `Containment repair in ${label(AISLE)}`,
+    run: (s) => {
+      const w = requestWork(s, SCRIPTED.tech.identity, {
+        kind: 'hot_aisle_work',
+        target: AISLE,
+        startInMin: 0,
+        durationMin: 0,
+        dryRun: false,
+        ticket: 'scenario-ha1-door',
+        note: 'Containment door closer',
+      });
+      return {
+        caption: `A facility tech asks to open ${label(AISLE)} to fix a door closer. ${verdictWord(w.verdict)}: both rows are protected for ${JOB}. Earliest safe time: ${w.earliestSafe || 'now'}.`,
+        camera: onRacks(s.aisle(AISLE)!.rows.flatMap((r) => s.racksInRow(r).map((x) => x.id))),
+      };
+    },
+  },
+  {
+    at: 10,
+    title: `${label(UPS)} quarterly service`,
+    run: (s) => {
+      const w = requestWork(s, SCRIPTED.tech.identity, {
+        kind: 'facility_work',
+        target: UPS,
+        startInMin: 0,
+        durationMin: 0,
+        dryRun: false,
+        ticket: 'scenario-ups-b',
+        routine: true,
+        note: 'Quarterly battery test',
+      });
+      return {
+        caption: `Next, ${label(UPS)}'s quarterly battery test. ${verdictWord(w.verdict)}: it feeds ${JOB}'s protected racks. Routine, so the fixer can queue it. Earliest safe time: ${w.earliestSafe || 'now'}.`,
+        camera: onPart(UPS),
+      };
+    },
+  },
+  {
+    at: 15,
+    title: `${label(PDU)} swap`,
+    run: (s) => {
+      const w = requestWork(s, SCRIPTED.tech.identity, {
+        kind: 'facility_work',
+        target: PDU,
+        startInMin: 0,
+        durationMin: 0,
+        dryRun: false,
+        ticket: 'scenario-pdu-swap',
+        note: 'Replace failing breaker',
+      });
+      patchScenario(s, { placementId: w.id }); // the step after approves this request
+      return {
+        caption: `Then a breaker swap on ${label(PDU)}. ${verdictWord(w.verdict)}: no job there, but Row 10's racks would be one failure from an outage, with tenant-gamma on them.`,
+        camera: onPart(PDU),
+      };
+    },
+  },
+  {
+    at: 16,
+    title: 'Shift lead approves the swap',
+    run: (s) => {
+      approveWork(s, SCRIPTED.lead.identity, s.scenario()!.placementId);
+      const yellow = s.downstreamRacks(PDU).filter((r) => s.margin(r)?.level === 'yellow');
+      return {
+        caption: `The on-call shift lead approves it. ${label(PDU)} goes offline and ${yellow.length} racks run on one power feed until the swap is done.`,
+        camera: onRacks(yellow, [PDU]),
+      };
+    },
+  },
+  {
+    at: 20,
+    title: `${BROKEN} fails`,
+    run: (s) => {
+      reportNodeFailure(s, SCRIPTED.scheduler.identity, BROKEN);
+      return {
+        caption: `${BROKEN}, a free spare in Row 9, fails. Isolated, on a healthy rack, no job: routine work the fixer can take out of service and send a hardware tech to.`,
+        camera: onNode(BROKEN),
+      };
+    },
+  },
+  {
+    at: 60,
+    title: `${JOB} finishes`,
+    run: (s) => {
+      finishJob(s, SCRIPTED.scheduler.identity, JOB);
+      return {
+        caption: `${JOB} finishes early, but its protection lease still locks the racks until T+4h, and ${label(UPS)} stays refused for nothing. A stale lock for the fixer to release, then the battery test to rebook.`,
+        camera: overview(),
+      };
+    },
+  },
+];
+
+export const STEPS: Record<Mode, Step[]> = { naive, squawk: squawk, updates, maintenance };
 
 // ---------------------------------------------------------------- reducers' logic
 
@@ -261,7 +538,7 @@ export function requirePresenter(s: Store, identity: string): ActorRow {
 }
 
 function checkMode(mode: string): Mode {
-  if (!isMode(mode)) throw new RequestError(`mode must be ${MODES.join(' or ')}.`);
+  if (!isMode(mode)) throw new RequestError(`mode must be one of ${MODES.join(', ')}.`);
   return mode;
 }
 
@@ -289,7 +566,7 @@ export function setReady(s: Store, mode: Mode, bed: string, caption: string): vo
 export function startClean(s: Store, mode: Mode): void {
   seed(s, buildSite(DEMO_HALL));
   ensureScriptedActors(s);
-  setReady(s, mode, 'demo', INTRO_CAPTION);
+  setReady(s, mode, 'demo', INTROS[mode]);
 }
 
 function runStep(s: Store, mode: Mode, i: number): void {

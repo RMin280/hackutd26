@@ -14,7 +14,7 @@ spacetimedb/
 │   ├── diagnose.ts       # shared-cause diagnosis
 │   ├── placement.ts      # safe restart placement
 │   ├── commands.ts       # one function per reducer
-│   ├── scenario.ts       # the presenter's "big job failure" run, both modes, as scripted actors
+│   ├── scenario.ts       # the presenter's scenarios (big job failure in both modes, software updates, maintenance window), as scripted actors
 │   └── lab.ts            # the diagnostics test bed a fresh database starts with
 └── test/                 # node:test via tsx; an in-memory Store with the same indexes
 ```
@@ -69,11 +69,22 @@ The control room's step list (DESIGN.md §10.2) now runs on the backend. Each st
 
 | Reducer | Does |
 | --- | --- |
-| `scenario_start(mode)` | Clean demo hall at T+0, ready for step 1. `mode`: `naive` or `squawk` |
+| `scenario_start(mode)` | Clean demo hall at T+0, ready for step 1. `mode`: `naive` or `squawk` (big job failure), `updates` or `maintenance` |
 | `scenario_next(mode)` | Runs the next step. From the test bed (or the other mode) it starts a clean run first |
 | `scenario_goto(mode, step)` | Reseeds and replays to step (0-based) in one transaction |
 | `reset_demo()` | `scenario_start` in the current mode |
 | `naive_restart(job, failed_node)` | What a scheduler does without Squawk: swap in the nearest free node, no diagnosis, no check |
+
+### Operations scenarios
+
+Two more scenarios exercise the work scopes (DESIGN.md §4.4) and set up work for the Nemotron fixer agent. They leave that work to the agent and never do it themselves; `test/ops-scenarios.test.ts` checks each verdict and that the feed leaves exactly these issues for the fixer's triage. The view lists them (`frontend/src/mock/scenario.ts`) but plays them only in live mode: the view's mock engine doesn't model software scopes.
+
+| `mode` | Steps | Leaves for the fixer |
+| --- | --- | --- |
+| `updates`: Software updates | Online agent patch on `job-train-1` (allowed, the job keeps training) · GPU driver on `rack-r9-04` (refused: tenant-gamma, routine) · the same on free spare `node-1190` (allowed, 90 min out of service) · a second update on `node-1190` (refused: one piece of work per node, earliest T+1h36m) · Leaf R3 firmware (refused: 128 job nodes below it, routine) · `node-1190` comes back degraded · `job-train-1` finishes | `maintenance_refused` ×2 (rack-r9-04, sw-leaf-r3; the leaf can be rebooked once the job is done), `broken_node` (node-1190) |
+| `maintenance`: Maintenance window | 4 h protection for `job-train-1` · containment repair in HA-1 (refused: protected rows) · UPS-B battery test (refused, routine) · PDU-R10-A swap (needs approval) · the on-call shift lead approves it (Row 10 runs on one power feed) · free spare `node-1118` fails · `job-train-1` finishes early | `maintenance_refused` (ups-b), `broken_node` (node-1118), `stale_protection` (the lease still locks 125 racks; releasing it unblocks UPS-B) |
+
+New scripted actors: Update agent (scheduler_agent), Network tech and Facility tech (technician), Shift lead (on call).
 
 The `scenario` table (one row) holds the mode, the step, the caption and the camera target; the view reads it. `bed` says what the hall holds: `demo`, `lab` (the test bed) or `scale`.
 

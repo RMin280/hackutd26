@@ -273,6 +273,35 @@ def check_spacetime(r: Report, settings: Any) -> None:
     r.ok(f"Database '{db}': {len(tables)} tables, {len(reducers)} reducers")
     r.info("tables: " + (", ".join(tables) or "none"))
     r.info("reducers: " + (", ".join(reducers) or "none"))
+    missing = [x for x in ("request_work", "release_work", "record_event", "diagnose_failure") if x not in reducers]
+    if missing:
+        r.fail(f"The module lacks the fixer's reducers: {', '.join(missing)}", "Publish the current module: bash dev.sh publish")
+        return
+    check_squawk_reads(r, settings)
+
+
+def check_squawk_reads(r: Report, settings: Any) -> None:
+    """The fixer's own reads through agents/squawk_http.py, with its token: the clock and the feed."""
+    from .squawk import SquawkUnavailable
+    from .squawk_http import HttpSquawk, identity_of
+
+    if not settings.spacetime_token:
+        r.fail("SPACETIME_TOKEN not set: the fixer has no identity", "Run: python -m agents.squawk_http setup")
+        return
+    try:
+        who = identity_of(settings.spacetime_token)
+    except ValueError:
+        r.fail("SPACETIME_TOKEN isn't a SpacetimeDB token", "Run: python -m agents.squawk_http setup --new")
+        return
+    try:
+        br = HttpSquawk.from_settings(settings)
+        now, events = br.now, br.get_events(0)
+    except SquawkUnavailable as exc:
+        r.fail(f"The fixer can't read Squawk: {exc}")
+        return
+    last = f", newest seq {events[-1].seq}" if events else ""
+    r.ok(f"Fixer reads Squawk as identity {who[:12]}…: clock T+{now}m, {len(events)} events in the feed{last}")
+    r.info(f"Registration (fixer-agent, remediation_agent) is checked on its first action; `python -m agents.squawk_http setup` does it.")
 
 
 def main(argv: list[str] | None = None) -> int:

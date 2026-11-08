@@ -110,7 +110,23 @@ An agent run costs about one request per step. `check_setup` shows today's remai
 
 ## SpacetimeDB contract (for the backend)
 
-The agents code against `agents/squawk.py` (`Squawk`). Today `MockSquawk` implements it in-process. Once the SpacetimeDB module covers the tables and reducers below, a thin HTTP adapter replaces the mock, with no change to the agents.
+The agents code against `agents/squawk.py` (`Squawk`). `MockSquawk` implements it in-process; `agents/squawk_http.py` (`HttpSquawk`) implements it over the live module, with no change to the agents.
+
+**Run the fixer live** (server running, module published):
+
+```
+python -m agents.squawk_http setup --db squawk   # once per database: new identity, token into .env, register_actor as fixer-agent (needs the admin CLI)
+python -m agents.check_setup --no-llm            # reads the clock and the feed as the fixer
+# Maincloud instead (the token is per server, so this makes a new identity; then the admin registers it there):
+# python -m agents.squawk_http setup --host https://maincloud.spacetimedb.com --db squawk-hackutd26 --server maincloud
+python -m agents.fixer --scripted                # live whenever SPACETIME_DB is set; --mock for the storyline, --once to handle the feed and exit
+```
+
+Then run a scenario (`spacetime call --server local squawk scenario_start maintenance`, then `scenario_next maintenance` ×7). The fixer takes node-1118 out of service and sends a tech, releases job-train-1's stale protection lock, and queues the UPS-B request until the PDU-R10-A swap ends; after `advance_clock`, it rechecks and hands the shift lead a `warn`. It starts from the beginning of the feed (`--from-now` skips what's there), drops queued requests when the hall is reset, and fails closed while Squawk is unreachable.
+
+**How the adapter maps the contract** (actual module, which differs from the original proposal below in places): lease ids are the work ids as `#12`; `simulate` is `request_work(..., dry_run=true)`; a request on a part is checked and booked as the actor whose routine request it was (`on_behalf_of`); `request_approval` is a booking for the requester that comes back `warn` and waits in `needs_approval`; `dispatch_tech`, `notify`, `escalate` and `record` are `record_event`. Events come from the `decision` table (`WHERE seq > ?`), normalized so a lease release is about the lease and blockers are `{kind, id, until}`. The connection acts only as its own actor. The dependency agent's calls raise `NotImplementedError` (deferred). `tests/test_squawk_http.py` checks it against `MockSquawk` on recorded backend answers; re-record with `tests/fixtures/record_spacetime.py`.
+
+The original proposal for the module (kept for reference):
 
 Python has no maintained SpacetimeDB SDK, so agents use its HTTP API: `POST /v1/database/<db>/sql` to read, `POST /v1/database/<db>/call/<reducer>` (JSON array of arguments) to act, and `POST /v1/identity` for each agent's token (`Authorization: Bearer <token>`). Reducers don't return values, so a call whose answer the agent needs takes a `request_id`, and the module writes the answer to a table keyed by it.
 

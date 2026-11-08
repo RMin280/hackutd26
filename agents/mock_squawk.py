@@ -611,6 +611,11 @@ class MockSquawk:
         self._enter("facility", "set_job_status", perm="facility", job=job_id, status=status)
         previous = self.jobs[job_id]["status"]
         self.jobs[job_id].update(status=status, since=self._now)
+        if status == "finished":  # as the backend's finish_job: its nodes go back to the pool
+            for n, owner in self.owner.items():
+                if owner == Owner("job", job_id):
+                    self.owner[n] = Owner("free")
+            self.jobs[job_id]["nodes"] = 0
         self._emit("job_status", "facility", job_id, f"{job_id} {status}.", status=status, previous=previous)
 
     def advance(self, to: int) -> None:

@@ -2,7 +2,8 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ensureScriptedActors, scenarioGoto, scenarioNext, scenarioStart, STEPS } from '../src/core/scenario';
+import { ensureScriptedActors, MODES, scenarioGoto, scenarioNext, scenarioStart, STEPS } from '../src/core/scenario';
+import { SCENARIOS, SCENARIO_LIST } from '../../frontend/src/mock/scenario';
 import { demo, freshDatabase, ID } from './helpers';
 
 // Same steps as frontend/src/mock/scenario.ts (the view's step list reads those).
@@ -18,9 +19,9 @@ const EXPECTED = {
     [0, 'CDU-3 degrades'],
     [10, 'node-417 fails'],
     [11, 'Diagnose the failure'],
-    [12, 'Find a safe place to restart'],
+    [12, 'Find a safe restart'],
     [13, 'Restart and protect'],
-    [30, 'Cooling agent asks for CDU-4'],
+    [30, 'Agent asks for CDU-4'],
     [50, 'node-422 fails'],
   ],
 };
@@ -30,6 +31,17 @@ function presenter() {
   ensureScriptedActors(s);
   return s;
 }
+
+test('every scenario the backend runs is listed in the view, with the same steps', () => {
+  assert.deepEqual(SCENARIO_LIST.flatMap((sc) => sc.modes).sort(), [...MODES].sort());
+  for (const mode of MODES) {
+    assert.deepEqual(
+      SCENARIOS[mode].map((st) => [st.at, st.title]),
+      STEPS[mode].map((st) => [st.at, st.title]),
+      mode,
+    );
+  }
+});
 
 test('step lists match the view', () => {
   for (const mode of ['naive', 'squawk'] as const) {
@@ -124,5 +136,5 @@ test('a fresh database holds the test bed; Space starts the demo from it', () =>
 test('only a shift lead or admin can run the scenario', () => {
   const s = presenter();
   assert.throws(() => scenarioNext(s, ID.tech, 'squawk'), /can't run the scenario/);
-  assert.throws(() => scenarioStart(s, ID.lead, 'chaos'), /mode must be naive or squawk/);
+  assert.throws(() => scenarioStart(s, ID.lead, 'chaos'), /mode must be one of naive, squawk, updates, maintenance/);
 });

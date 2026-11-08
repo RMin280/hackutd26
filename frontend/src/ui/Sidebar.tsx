@@ -1,6 +1,7 @@
 import { useStore, stepTitles } from '../store';
 import { clock } from './format';
-import { SCENARIOS } from '../mock/scenario';
+import { SCENARIOS, SCENARIO_LIST, scenarioOf } from '../mock/scenario';
+import { liveEnabled } from '../live/config';
 import { IconChevron, IconNext, IconPause, IconPlay, IconReset } from './Icons';
 
 const LEGEND: { swatch: string; text: string }[] = [
@@ -65,6 +66,7 @@ export function Sidebar() {
 
   const titles = stepTitles(mode);
   const steps = SCENARIOS[mode];
+  const current = scenarioOf(mode);
 
   if (!open) {
     return (
@@ -90,19 +92,45 @@ export function Sidebar() {
       </header>
 
       <section className="side-section">
-        <h2 className="eyebrow">Scheduler</h2>
-        <div className="segmented" role="radiogroup" aria-label="Scheduler mode">
-          <button role="radio" aria-checked={mode === 'naive'} className={mode === 'naive' ? 'on' : ''} onClick={() => setMode('naive')}>
-            Naive
-          </button>
-          <button role="radio" aria-checked={mode === 'squawk'} className={mode === 'squawk' ? 'on' : ''} onClick={() => setMode('squawk')}>
-            Squawk
-          </button>
+        <h2 className="eyebrow">Scenario</h2>
+        <div className="scenario-pick" role="radiogroup" aria-label="Scenario">
+          {SCENARIO_LIST.map((sc) => {
+            const on = sc.id === current.id;
+            const off = sc.liveOnly && !liveEnabled;
+            return (
+              <button
+                key={sc.id}
+                role="radio"
+                aria-checked={on}
+                className={on ? 'on' : ''}
+                disabled={off}
+                title={off ? 'Runs on the backend: start the view in live mode to play it' : sc.name}
+                // switching scenario keeps the scheduler mode the presenter last chose
+                onClick={() => !on && setMode(sc.modes.includes('squawk') ? 'squawk' : sc.modes[0])}
+              >
+                {sc.name}
+                {off && <span className="scenario-pick-note">Live only</span>}
+              </button>
+            );
+          })}
         </div>
+        {current.modes.length > 1 && (
+          <>
+            <h2 className="eyebrow scheduler-head">Scheduler</h2>
+            <div className="segmented" role="radiogroup" aria-label="Scheduler mode">
+              <button role="radio" aria-checked={mode === 'naive'} className={mode === 'naive' ? 'on' : ''} onClick={() => setMode('naive')}>
+                Naive
+              </button>
+              <button role="radio" aria-checked={mode === 'squawk'} className={mode === 'squawk' ? 'on' : ''} onClick={() => setMode('squawk')}>
+                Squawk
+              </button>
+            </div>
+          </>
+        )}
       </section>
 
       <section className="side-section side-steps">
-        <h2 className="eyebrow">Scenario · Big job failure</h2>
+        <h2 className="eyebrow">Steps · {current.name}</h2>
         <ol className="steps">
           {titles.map((t, i) => (
             <li key={`${mode}-${i}`}>

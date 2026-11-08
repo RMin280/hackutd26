@@ -1,6 +1,9 @@
-// "Big job failure" scenario (DESIGN.md §10.2), scripted for both modes.
-// Each step mutates a copy of the world through the mock engine and emits the
-// decision events the real backend would publish.
+// The presenter's scenarios. "Big job failure" (DESIGN.md §10.2) is scripted for both
+// scheduler modes: each step mutates a copy of the world through the mock engine and emits the
+// decision events the real backend would publish. The operations scenarios ("Software updates",
+// "Maintenance window") exercise work scopes the mock engine doesn't model, so they run on the
+// backend only (spacetimedb/src/core/scenario.ts); here they are just their step list, which
+// spacetimedb/test/runner.test.ts keeps in step with the backend's.
 
 import type { DecisionEvent, FocusTarget, Site, World } from '../model/types';
 import {
@@ -13,7 +16,18 @@ import {
 } from './engine';
 import { JOB_ID, JOB_SIZE, initialOwners, label } from './site';
 
-export type Mode = 'naive' | 'squawk';
+/** A scenario key: the two scheduler modes of "Big job failure", then the operations scenarios. */
+export type Mode = 'naive' | 'squawk' | 'updates' | 'maintenance';
+
+/** The scenarios the presenter picks from. `modes` are the keys it runs as (the scheduler toggle when there are two). */
+export const SCENARIO_LIST: { id: string; name: string; modes: Mode[]; liveOnly: boolean }[] = [
+  { id: 'big-job', name: 'Big job failure', modes: ['naive', 'squawk'], liveOnly: false },
+  { id: 'updates', name: 'Software updates', modes: ['updates'], liveOnly: true },
+  { id: 'maintenance', name: 'Maintenance window', modes: ['maintenance'], liveOnly: true },
+];
+
+export const scenarioOf = (mode: Mode) => SCENARIO_LIST.find((s) => s.modes.includes(mode))!;
+export const isLiveOnly = (mode: Mode) => scenarioOf(mode).liveOnly;
 
 export interface StepResult {
   caption: string;
@@ -310,4 +324,31 @@ const squawk: Step[] = [
   },
 ];
 
-export const SCENARIOS: Record<Mode, Step[]> = { naive, squawk: squawk };
+/** A backend-only step: the mock can list it but not run it. */
+const liveStep = (at: number, title: string): Step => ({
+  at,
+  title,
+  run: () => ({ caption: 'This scenario runs on the backend: start the view in live mode (VITE_SPACETIMEDB_URI) to play it.' }),
+});
+
+const updates: Step[] = [
+  liveStep(0, `Online agent update on ${JOB_ID}`),
+  liveStep(5, 'Driver update on rack-r9-04'),
+  liveStep(6, 'Driver update on node-1190'),
+  liveStep(8, 'Second update on node-1190'),
+  liveStep(10, 'Leaf R3 firmware upgrade'),
+  liveStep(100, 'node-1190 comes back degraded'),
+  liveStep(120, `${JOB_ID} finishes`),
+];
+
+const maintenance: Step[] = [
+  liveStep(0, `Protect ${JOB_ID}`),
+  liveStep(5, 'Containment repair in Hot aisle 1'),
+  liveStep(10, 'UPS-B quarterly service'),
+  liveStep(15, 'PDU-R10-A swap'),
+  liveStep(16, 'Shift lead approves the swap'),
+  liveStep(20, 'node-1118 fails'),
+  liveStep(60, `${JOB_ID} finishes`),
+];
+
+export const SCENARIOS: Record<Mode, Step[]> = { naive, squawk: squawk, updates, maintenance };

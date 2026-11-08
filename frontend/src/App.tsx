@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useStore, stepCount } from './store';
 import { Hall } from './scene/Hall';
+import { scenarioOf } from './mock/scenario';
 import { Sidebar } from './ui/Sidebar';
 import { StatTiles } from './ui/StatTiles';
 import { DecisionFeed } from './ui/DecisionFeed';
@@ -59,7 +60,9 @@ function Caption() {
   return (
     <div className={`caption ${open ? '' : 'caption-closed'}`}>
       <div className="caption-head">
-        <span className={`caption-mode tone-${mode === 'squawk' ? 'azure' : 'red'}`}>{mode === 'squawk' ? 'Squawk' : 'Naive scheduler'}</span>
+        <span className={`caption-mode tone-${mode === 'naive' ? 'red' : 'azure'}`}>
+          {mode === 'naive' ? 'Naive scheduler' : mode === 'squawk' ? 'Squawk' : scenarioOf(mode).name}
+        </span>
         <span className="caption-step">{stepIndex < 0 ? 'Ready' : `Step ${stepIndex + 1} of ${total}`}</span>
         <button
           className="icon-btn"

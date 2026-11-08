@@ -6,7 +6,10 @@
 import { create } from 'zustand';
 import type { DecisionEvent, FocusTarget, Selection, Site, World } from './model/types';
 import { buildSite } from './mock/site';
-import { INTRO_CAPTION, SCENARIOS, initialWorld, type Mode } from './mock/scenario';
+import { INTRO_CAPTION, SCENARIOS, initialWorld, isLiveOnly, type Mode } from './mock/scenario';
+
+/** Offline, a backend-only scenario has nothing to play. */
+const LIVE_ONLY_CAPTION = 'This scenario runs on the backend: start the view in live mode (VITE_SPACETIMEDB_URI) to play it.';
 import { repairWorld, type RepairTarget } from './mock/repair';
 
 export interface Hover {
@@ -85,7 +88,7 @@ export const useStore = create<AppState>((set, get) => ({
       stepIndex: -1,
       world: initialWorld(s.site),
       events: [],
-      caption: INTRO_CAPTION,
+      caption: isLiveOnly(s.mode) ? LIVE_ONLY_CAPTION : INTRO_CAPTION,
       selection: null,
       playing: false,
       camera: { seq: s.camera.seq + 1, target: { kind: 'overview' } },

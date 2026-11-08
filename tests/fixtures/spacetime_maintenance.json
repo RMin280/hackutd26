@@ -1,0 +1,1255 @@
+{
+ "db_note": "recorded from the maintenance scenario, step 7",
+ "queries": {
+  "SELECT * FROM decision WHERE seq > 0": [
+   {
+    "seq": 86,
+    "at_min": 60,
+    "actor": "Scheduler",
+    "actor_kind": "scheduler",
+    "actor_role": "scheduler_agent",
+    "title": "job-train-1 finished",
+    "verdict": "info",
+    "reason": "job-train-1 finished; its 1,000 nodes are free spares again. Protection #19 still locks 125 racks until T+4h.",
+    "focus_kind": "overview",
+    "focus_ids": [],
+    "focus_parts": [],
+    "work": 0,
+    "type": "job_status",
+    "subject": "job-train-1",
+    "data": "{\"status\":\"finished\",\"previous\":\"running\",\"nodes_released\":1000,\"protection\":\"19\"}"
+   },
+   {
+    "seq": 85,
+    "at_min": 20,
+    "actor": "Scheduler",
+    "actor_kind": "scheduler",
+    "actor_role": "scheduler_agent",
+    "title": "node-1118 failed",
+    "verdict": "failure",
+    "reason": "node-1118 was a free spare; no job is affected.",
+    "focus_kind": "node",
+    "focus_ids": [
+     "node-1118"
+    ],
+    "focus_parts": [],
+    "work": 0,
+    "type": "state_change",
+    "subject": "node-1118",
+    "data": "{\"kind\":\"node\",\"state\":\"failed\",\"previous\":\"ok\",\"owner_kind\":\"free\",\"owner_id\":\"\",\"job_status\":\"\",\"note\":\"\"}"
+   },
+   {
+    "seq": 84,
+    "at_min": 16,
+    "actor": "Shift lead (on call)",
+    "actor_kind": "facility",
+    "actor_role": "shift_lead",
+    "title": "Maintenance on PDU-R10-A approved by Shift lead (on call)",
+    "verdict": "allow",
+    "reason": "Taking PDU-R10-A offline leaves 16 racks one failure from an outage (exposes tenant-gamma). Approved by Shift lead (on call).",
+    "focus_kind": "part",
+    "focus_ids": [
+     "pdu-r10-a"
+    ],
+    "focus_parts": [],
+    "work": 22,
+    "type": "lease_granted",
+    "subject": "pdu-r10-a",
+    "data": "{\"lease\":\"22\",\"lease_type\":\"maintenance\",\"kind\":\"facility_work\",\"target\":\"pdu-r10-a\",\"target_kind\":\"part\",\"job\":\"\",\"racks\":16,\"holder\":\"Facility tech\",\"booked_by\":\"\",\"start\":16,\"until\":255,\"routine\":false,\"note\":\"Replace failing breaker\",\"verdict\":\"warn\",\"status\":\"active\",\"approved_by\":\"Shift lead (on call)\",\"earliest_safe\":\"\",\"blockers\":[]}"
+   },
+   {
+    "seq": 83,
+    "at_min": 15,
+    "actor": "Facility tech",
+    "actor_kind": "facility",
+    "actor_role": "technician",
+    "title": "Maintenance on PDU-R10-A needs approval",
+    "verdict": "warn",
+    "reason": "Taking PDU-R10-A offline leaves 16 racks one failure from an outage (exposes tenant-gamma). Needs shift lead approval.",
+    "focus_kind": "part",
+    "focus_ids": [
+     "pdu-r10-a"
+    ],
+    "focus_parts": [],
+    "work": 22,
+    "type": "approval_requested",
+    "subject": "pdu-r10-a",
+    "data": "{\"lease\":\"22\",\"lease_type\":\"maintenance\",\"kind\":\"facility_work\",\"target\":\"pdu-r10-a\",\"target_kind\":\"part\",\"job\":\"\",\"racks\":16,\"holder\":\"Facility tech\",\"booked_by\":\"\",\"start\":15,\"until\":255,\"routine\":false,\"note\":\"Replace failing breaker\",\"verdict\":\"warn\",\"status\":\"needs_approval\",\"minutes\":240,\"earliest_safe\":\"\",\"earliest_safe_min\":-1,\"blockers\":[],\"requested_for\":\"\"}"
+   },
+   {
+    "seq": 82,
+    "at_min": 10,
+    "actor": "Facility tech",
+    "actor_kind": "facility",
+    "actor_role": "technician",
+    "title": "Maintenance on UPS-B denied",
+    "verdict": "deny",
+    "reason": "Taking UPS-B offline drops 125 racks protected for job-train-1 below full backup (protected until T+4h). Earliest safe time: T+4h (with shift lead approval).",
+    "focus_kind": "part",
+    "focus_ids": [
+     "ups-b"
+    ],
+    "focus_parts": [],
+    "work": 21,
+    "type": "lease_denied",
+    "subject": "ups-b",
+    "data": "{\"lease\":\"21\",\"lease_type\":\"maintenance\",\"kind\":\"facility_work\",\"target\":\"ups-b\",\"target_kind\":\"part\",\"job\":\"\",\"racks\":160,\"holder\":\"Facility tech\",\"booked_by\":\"\",\"start\":10,\"until\":250,\"routine\":true,\"note\":\"Quarterly battery test\",\"verdict\":\"deny\",\"status\":\"denied\",\"minutes\":240,\"earliest_safe\":\"T+4h (with shift lead approval)\",\"earliest_safe_min\":240,\"blockers\":[{\"ref\":\"#19\",\"text\":\"job-train-1's protection ends\",\"end\":240}],\"requested_for\":\"\"}"
+   },
+   {
+    "seq": 81,
+    "at_min": 5,
+    "actor": "Facility tech",
+    "actor_kind": "facility",
+    "actor_role": "technician",
+    "title": "Hot-aisle work on Hot aisle 1 (Rows 1\u20132) denied",
+    "verdict": "deny",
+    "reason": "Hot aisle 1 (Rows 1\u20132) touches racks locked for job-train-1 until T+4h (protection #19); hands-on work there has to wait. Opening Hot aisle 1 drops 32 racks protected for job-train-1 below full backup (protected until T+4h). Earliest safe time: T+4h (with shift lead approval).",
+    "focus_kind": "racks",
+    "focus_ids": [
+     "rack-r1-01",
+     "rack-r1-02",
+     "rack-r1-03",
+     "rack-r1-04",
+     "rack-r1-05",
+     "rack-r1-06",
+     "rack-r1-07",
+     "rack-r1-08",
+     "rack-r1-09",
+     "rack-r1-10",
+     "rack-r1-11",
+     "rack-r1-12",
+     "rack-r1-13",
+     "rack-r1-14",
+     "rack-r1-15",
+     "rack-r1-16",
+     "rack-r2-01",
+     "rack-r2-02",
+     "rack-r2-03",
+     "rack-r2-04",
+     "rack-r2-05",
+     "rack-r2-06",
+     "rack-r2-07",
+     "rack-r2-08",
+     "rack-r2-09",
+     "rack-r2-10",
+     "rack-r2-11",
+     "rack-r2-12",
+     "rack-r2-13",
+     "rack-r2-14",
+     "rack-r2-15",
+     "rack-r2-16"
+    ],
+    "focus_parts": [],
+    "work": 20,
+    "type": "lease_denied",
+    "subject": "ha-1",
+    "data": "{\"lease\":\"20\",\"lease_type\":\"maintenance\",\"kind\":\"hot_aisle_work\",\"target\":\"ha-1\",\"target_kind\":\"aisle\",\"job\":\"\",\"racks\":32,\"holder\":\"Facility tech\",\"booked_by\":\"\",\"start\":5,\"until\":185,\"routine\":false,\"note\":\"Containment door closer\",\"verdict\":\"deny\",\"status\":\"denied\",\"minutes\":180,\"earliest_safe\":\"T+4h (with shift lead approval)\",\"earliest_safe_min\":240,\"blockers\":[{\"ref\":\"#19\",\"text\":\"#19 ends\",\"end\":240}],\"requested_for\":\"\"}"
+   },
+   {
+    "seq": 80,
+    "at_min": 0,
+    "actor": "Scheduler",
+    "actor_kind": "scheduler",
+    "actor_role": "scheduler_agent",
+    "title": "Protection lease for job-train-1 granted",
+    "verdict": "allow",
+    "reason": "Protects 125 racks of job-train-1 until T+4h (4 h). Maintenance that would remove their backup, or hands-on work in them, is refused; online updates still run.",
+    "focus_kind": "overview",
+    "focus_ids": [],
+    "focus_parts": [],
+    "work": 19,
+    "type": "lease_granted",
+    "subject": "job-train-1",
+    "data": "{\"lease\":\"19\",\"lease_type\":\"protection\",\"kind\":\"protection\",\"target\":\"job-train-1\",\"target_kind\":\"job\",\"job\":\"job-train-1\",\"racks\":125,\"holder\":\"Scheduler\",\"booked_by\":\"\",\"start\":0,\"until\":240,\"routine\":false,\"note\":\"\",\"verdict\":\"allow\",\"status\":\"active\"}"
+   }
+  ],
+  "SELECT * FROM node WHERE id = 'node-1118'": [
+   {
+    "id": "node-1118",
+    "rack": "rack-r9-12",
+    "row_num": 9,
+    "slot": 5,
+    "ord": 1117,
+    "state": "failed",
+    "owner_kind": "free",
+    "owner_id": "",
+    "held_by": 0
+   }
+  ],
+  "SELECT * FROM decision WHERE type = 'diagnosis' AND subject = 'node-1118'": [
+   {
+    "seq": 87,
+    "at_min": 60,
+    "actor": "Squawk",
+    "actor_kind": "squawk",
+    "actor_role": "system",
+    "title": "Diagnosis: isolated",
+    "verdict": "isolated",
+    "reason": "Isolated: every part above node-1118 is ok and no other recent failure shares a part with it. Treat as a single-node fault. Send a hardware tech to node-1118.",
+    "focus_kind": "node",
+    "focus_ids": [
+     "node-1118"
+    ],
+    "focus_parts": [],
+    "work": 0,
+    "type": "diagnosis",
+    "subject": "node-1118",
+    "data": "{\"diagnosis\":\"6\",\"nodes\":[\"node-1118\"],\"classification\":\"isolated\",\"cause\":\"\",\"at_risk\":0,\"send\":\"hardware tech to node-1118\",\"by\":\"fixer-agent\"}"
+   }
+  ],
+  "SELECT * FROM diagnosis WHERE id = 6": [
+   {
+    "id": 6,
+    "at_min": 60,
+    "job": "",
+    "nodes": [
+     "node-1118"
+    ],
+    "classification": "isolated",
+    "cause": "",
+    "at_risk": [],
+    "send": "hardware tech to node-1118",
+    "reason": "Isolated: every part above node-1118 is ok and no other recent failure shares a part with it. Treat as a single-node fault."
+   }
+  ],
+  "SELECT * FROM margin WHERE rack = 'rack-r9-12'": [
+   {
+    "rack": "rack-r9-12",
+    "power": 1,
+    "cooling": 1,
+    "margin": 1,
+    "level": "green",
+    "unprotected": [],
+    "protected_by": 0,
+    "protected_job": "",
+    "protected_until": -1
+   }
+  ],
+  "SELECT row_num FROM rack WHERE id = 'rack-r9-12'": [
+   {
+    "row_num": 9
+   }
+  ],
+  "SELECT * FROM job WHERE id = 'job-train-1'": [
+   {
+    "id": "job-train-1",
+    "status": "finished",
+    "size": 1000,
+    "nodes": 0,
+    "restarts": 0,
+    "crashes": 0
+   }
+  ],
+  "SELECT seq, at_min FROM decision WHERE type = 'job_status' AND subject = 'job-train-1'": [
+   {
+    "seq": 86,
+    "at_min": 60
+   }
+  ],
+  "SELECT * FROM work WHERE kind = 'protection' AND job = 'job-train-1' AND (status = 'active' OR status = 'granted')": [
+   {
+    "id": 19,
+    "ticket": "scenario-window-protect",
+    "kind": "protection",
+    "category": "protection",
+    "scope": "job_racks",
+    "mode": "shared",
+    "target_kind": "job",
+    "target": "job-train-1",
+    "target_label": "job-train-1",
+    "actor": "Scheduler",
+    "actor_role": "scheduler_agent",
+    "actor_identity": "5c00000000000000000000000000000000000000000000000000000000000002",
+    "requested_at": 0,
+    "start_min": 0,
+    "end_min": 240,
+    "status": "active",
+    "verdict": "allow",
+    "reason": "Protects 125 racks of job-train-1 until T+4h (4 h). Maintenance that would remove their backup, or hands-on work in them, is refused; online updates still run.",
+    "earliest_safe": "",
+    "earliest_safe_min": -1,
+    "blockers": [],
+    "racks": [
+     "rack-r1-01",
+     "rack-r1-02",
+     "rack-r1-03",
+     "rack-r1-04",
+     "rack-r1-05",
+     "rack-r1-06",
+     "rack-r1-07",
+     "rack-r1-08",
+     "rack-r1-09",
+     "rack-r1-10",
+     "rack-r1-11",
+     "rack-r1-12",
+     "rack-r1-13",
+     "rack-r1-14",
+     "rack-r1-15",
+     "rack-r1-16",
+     "rack-r2-01",
+     "rack-r2-02",
+     "rack-r2-03",
+     "rack-r2-04",
+     "rack-r2-05",
+     "rack-r2-06",
+     "rack-r2-07",
+     "rack-r2-08",
+     "rack-r2-09",
+     "rack-r2-10",
+     "rack-r2-11",
+     "rack-r2-12",
+     "rack-r2-13",
+     "rack-r2-14",
+     "rack-r2-15",
+     "rack-r2-16",
+     "rack-r3-01",
+     "rack-r3-02",
+     "rack-r3-03",
+     "rack-r3-04",
+     "rack-r3-05",
+     "rack-r3-06",
+     "rack-r3-07",
+     "rack-r3-08",
+     "rack-r3-09",
+     "rack-r3-10",
+     "rack-r3-11",
+     "rack-r3-12",
+     "rack-r3-13",
+     "rack-r3-14",
+     "rack-r3-15",
+     "rack-r3-16",
+     "rack-r4-01",
+     "rack-r4-02",
+     "rack-r4-03",
+     "rack-r4-04",
+     "rack-r4-05",
+     "rack-r4-06",
+     "rack-r4-07",
+     "rack-r4-08",
+     "rack-r4-09",
+     "rack-r4-10",
+     "rack-r4-11",
+     "rack-r4-12",
+     "rack-r4-13",
+     "rack-r4-14",
+     "rack-r4-15",
+     "rack-r4-16",
+     "rack-r5-01",
+     "rack-r5-02",
+     "rack-r5-03",
+     "rack-r5-04",
+     "rack-r5-05",
+     "rack-r5-06",
+     "rack-r5-07",
+     "rack-r5-08",
+     "rack-r5-09",
+     "rack-r5-10",
+     "rack-r5-11",
+     "rack-r5-12",
+     "rack-r5-13",
+     "rack-r5-14",
+     "rack-r5-15",
+     "rack-r5-16",
+     "rack-r6-01",
+     "rack-r6-02",
+     "rack-r6-03",
+     "rack-r6-04",
+     "rack-r6-05",
+     "rack-r6-06",
+     "rack-r6-07",
+     "rack-r6-08",
+     "rack-r6-09",
+     "rack-r6-10",
+     "rack-r6-11",
+     "rack-r6-12",
+     "rack-r6-13",
+     "rack-r6-14",
+     "rack-r6-15",
+     "rack-r6-16",
+     "rack-r7-01",
+     "rack-r7-02",
+     "rack-r7-03",
+     "rack-r7-04",
+     "rack-r7-05",
+     "rack-r7-06",
+     "rack-r7-07",
+     "rack-r7-08",
+     "rack-r7-09",
+     "rack-r7-10",
+     "rack-r7-11",
+     "rack-r7-12",
+     "rack-r7-13",
+     "rack-r7-14",
+     "rack-r7-15",
+     "rack-r7-16",
+     "rack-r8-01",
+     "rack-r8-02",
+     "rack-r8-03",
+     "rack-r8-04",
+     "rack-r8-05",
+     "rack-r8-06",
+     "rack-r8-07",
+     "rack-r8-08",
+     "rack-r8-09",
+     "rack-r8-10",
+     "rack-r8-11",
+     "rack-r8-12",
+     "rack-r8-13"
+    ],
+    "job": "job-train-1",
+    "offline_parts": [],
+    "offline_nodes": [],
+    "node_count": 0,
+    "approved_by": "",
+    "routine": false,
+    "note": "",
+    "booked_by": ""
+   }
+  ],
+  "SELECT * FROM work WHERE target = 'node-1118' AND (status = 'active' OR status = 'granted')": [],
+  "SELECT * FROM node WHERE id = 'node-1205'": [
+   {
+    "id": "node-1205",
+    "rack": "rack-r10-07",
+    "row_num": 10,
+    "slot": 4,
+    "ord": 1204,
+    "state": "ok",
+    "owner_kind": "free",
+    "owner_id": "",
+    "held_by": 0
+   }
+  ],
+  "SELECT * FROM margin WHERE rack = 'rack-r10-07'": [
+   {
+    "rack": "rack-r10-07",
+    "power": 0,
+    "cooling": 1,
+    "margin": 0,
+    "level": "yellow",
+    "unprotected": [
+     "pdu-r10-b",
+     "ups-b",
+     "switchgear-b",
+     "util-b"
+    ],
+    "protected_by": 0,
+    "protected_job": "",
+    "protected_until": -1
+   }
+  ],
+  "SELECT row_num FROM rack WHERE id = 'rack-r10-07'": [
+   {
+    "row_num": 10
+   }
+  ],
+  "SELECT * FROM work WHERE target = 'node-1205' AND (status = 'active' OR status = 'granted')": [],
+  "SELECT * FROM node WHERE id = 'node-1131'": [
+   {
+    "id": "node-1131",
+    "rack": "rack-r9-14",
+    "row_num": 9,
+    "slot": 2,
+    "ord": 1130,
+    "state": "ok",
+    "owner_kind": "tenant",
+    "owner_id": "tenant-gamma",
+    "held_by": 0
+   }
+  ],
+  "SELECT * FROM margin WHERE rack = 'rack-r9-14'": [
+   {
+    "rack": "rack-r9-14",
+    "power": 1,
+    "cooling": 1,
+    "margin": 1,
+    "level": "green",
+    "unprotected": [],
+    "protected_by": 0,
+    "protected_job": "",
+    "protected_until": -1
+   }
+  ],
+  "SELECT row_num FROM rack WHERE id = 'rack-r9-14'": [
+   {
+    "row_num": 9
+   }
+  ],
+  "SELECT * FROM work WHERE target = 'node-1131' AND (status = 'active' OR status = 'granted')": [],
+  "SELECT * FROM node WHERE id = 'node-417'": [
+   {
+    "id": "node-417",
+    "rack": "rack-r1-12",
+    "row_num": 1,
+    "slot": 0,
+    "ord": 88,
+    "state": "ok",
+    "owner_kind": "free",
+    "owner_id": "",
+    "held_by": 0
+   }
+  ],
+  "SELECT * FROM margin WHERE rack = 'rack-r1-12'": [
+   {
+    "rack": "rack-r1-12",
+    "power": 1,
+    "cooling": 1,
+    "margin": 1,
+    "level": "green",
+    "unprotected": [],
+    "protected_by": 19,
+    "protected_job": "job-train-1",
+    "protected_until": 240
+   }
+  ],
+  "SELECT row_num FROM rack WHERE id = 'rack-r1-12'": [
+   {
+    "row_num": 1
+   }
+  ],
+  "SELECT * FROM work WHERE target = 'node-417' AND (status = 'active' OR status = 'granted')": [],
+  "SELECT * FROM node WHERE id = 'node-233'": [
+   {
+    "id": "node-233",
+    "rack": "rack-r2-14",
+    "row_num": 2,
+    "slot": 0,
+    "ord": 232,
+    "state": "ok",
+    "owner_kind": "free",
+    "owner_id": "",
+    "held_by": 0
+   }
+  ],
+  "SELECT * FROM margin WHERE rack = 'rack-r2-14'": [
+   {
+    "rack": "rack-r2-14",
+    "power": 1,
+    "cooling": 1,
+    "margin": 1,
+    "level": "green",
+    "unprotected": [],
+    "protected_by": 19,
+    "protected_job": "job-train-1",
+    "protected_until": 240
+   }
+  ],
+  "SELECT row_num FROM rack WHERE id = 'rack-r2-14'": [
+   {
+    "row_num": 2
+   }
+  ],
+  "SELECT * FROM work WHERE target = 'node-233' AND (status = 'active' OR status = 'granted')": [],
+  "SELECT * FROM node WHERE id = 'node-1010'": [
+   {
+    "id": "node-1010",
+    "rack": "rack-r8-15",
+    "row_num": 8,
+    "slot": 1,
+    "ord": 1009,
+    "state": "ok",
+    "owner_kind": "tenant",
+    "owner_id": "tenant-beta",
+    "held_by": 0
+   }
+  ],
+  "SELECT * FROM margin WHERE rack = 'rack-r8-15'": [
+   {
+    "rack": "rack-r8-15",
+    "power": 1,
+    "cooling": 1,
+    "margin": 1,
+    "level": "green",
+    "unprotected": [],
+    "protected_by": 0,
+    "protected_job": "",
+    "protected_until": -1
+   }
+  ],
+  "SELECT row_num FROM rack WHERE id = 'rack-r8-15'": [
+   {
+    "row_num": 8
+   }
+  ],
+  "SELECT * FROM work WHERE target = 'node-1010' AND (status = 'active' OR status = 'granted')": [],
+  "SELECT id, rack FROM downstream WHERE part = 'cdu-3'": [
+   {
+    "id": 14173,
+    "rack": "rack-r1-11"
+   },
+   {
+    "id": 14187,
+    "rack": "rack-r1-12"
+   },
+   {
+    "id": 14201,
+    "rack": "rack-r1-13"
+   },
+   {
+    "id": 14215,
+    "rack": "rack-r1-14"
+   },
+   {
+    "id": 14229,
+    "rack": "rack-r1-15"
+   }
+  ],
+  "SELECT id, rack FROM downstream WHERE part = 'ups-b'": [
+   {
+    "id": 14030,
+    "rack": "rack-r1-01"
+   },
+   {
+    "id": 14044,
+    "rack": "rack-r1-02"
+   },
+   {
+    "id": 14058,
+    "rack": "rack-r1-03"
+   },
+   {
+    "id": 14072,
+    "rack": "rack-r1-04"
+   },
+   {
+    "id": 14086,
+    "rack": "rack-r1-05"
+   },
+   {
+    "id": 14100,
+    "rack": "rack-r1-06"
+   },
+   {
+    "id": 14114,
+    "rack": "rack-r1-07"
+   },
+   {
+    "id": 14128,
+    "rack": "rack-r1-08"
+   },
+   {
+    "id": 14142,
+    "rack": "rack-r1-09"
+   },
+   {
+    "id": 14156,
+    "rack": "rack-r1-10"
+   },
+   {
+    "id": 14170,
+    "rack": "rack-r1-11"
+   },
+   {
+    "id": 14184,
+    "rack": "rack-r1-12"
+   },
+   {
+    "id": 14198,
+    "rack": "rack-r1-13"
+   },
+   {
+    "id": 14212,
+    "rack": "rack-r1-14"
+   },
+   {
+    "id": 14226,
+    "rack": "rack-r1-15"
+   },
+   {
+    "id": 14240,
+    "rack": "rack-r1-16"
+   },
+   {
+    "id": 14254,
+    "rack": "rack-r2-01"
+   },
+   {
+    "id": 14268,
+    "rack": "rack-r2-02"
+   },
+   {
+    "id": 14282,
+    "rack": "rack-r2-03"
+   },
+   {
+    "id": 14296,
+    "rack": "rack-r2-04"
+   },
+   {
+    "id": 14310,
+    "rack": "rack-r2-05"
+   },
+   {
+    "id": 14324,
+    "rack": "rack-r2-06"
+   },
+   {
+    "id": 14338,
+    "rack": "rack-r2-07"
+   },
+   {
+    "id": 14352,
+    "rack": "rack-r2-08"
+   },
+   {
+    "id": 14366,
+    "rack": "rack-r2-09"
+   },
+   {
+    "id": 14380,
+    "rack": "rack-r2-10"
+   },
+   {
+    "id": 14394,
+    "rack": "rack-r2-11"
+   },
+   {
+    "id": 14408,
+    "rack": "rack-r2-12"
+   },
+   {
+    "id": 14422,
+    "rack": "rack-r2-13"
+   },
+   {
+    "id": 14436,
+    "rack": "rack-r2-14"
+   },
+   {
+    "id": 14450,
+    "rack": "rack-r2-15"
+   },
+   {
+    "id": 14464,
+    "rack": "rack-r2-16"
+   },
+   {
+    "id": 14478,
+    "rack": "rack-r3-01"
+   },
+   {
+    "id": 14492,
+    "rack": "rack-r3-02"
+   },
+   {
+    "id": 14506,
+    "rack": "rack-r3-03"
+   },
+   {
+    "id": 14520,
+    "rack": "rack-r3-04"
+   },
+   {
+    "id": 14534,
+    "rack": "rack-r3-05"
+   },
+   {
+    "id": 14548,
+    "rack": "rack-r3-06"
+   },
+   {
+    "id": 14562,
+    "rack": "rack-r3-07"
+   },
+   {
+    "id": 14576,
+    "rack": "rack-r3-08"
+   },
+   {
+    "id": 14590,
+    "rack": "rack-r3-09"
+   },
+   {
+    "id": 14604,
+    "rack": "rack-r3-10"
+   },
+   {
+    "id": 14618,
+    "rack": "rack-r3-11"
+   },
+   {
+    "id": 14632,
+    "rack": "rack-r3-12"
+   },
+   {
+    "id": 14646,
+    "rack": "rack-r3-13"
+   },
+   {
+    "id": 14660,
+    "rack": "rack-r3-14"
+   },
+   {
+    "id": 14674,
+    "rack": "rack-r3-15"
+   },
+   {
+    "id": 14688,
+    "rack": "rack-r3-16"
+   },
+   {
+    "id": 14702,
+    "rack": "rack-r4-01"
+   },
+   {
+    "id": 14716,
+    "rack": "rack-r4-02"
+   },
+   {
+    "id": 14730,
+    "rack": "rack-r4-03"
+   },
+   {
+    "id": 14744,
+    "rack": "rack-r4-04"
+   },
+   {
+    "id": 14758,
+    "rack": "rack-r4-05"
+   },
+   {
+    "id": 14772,
+    "rack": "rack-r4-06"
+   },
+   {
+    "id": 14786,
+    "rack": "rack-r4-07"
+   },
+   {
+    "id": 14800,
+    "rack": "rack-r4-08"
+   },
+   {
+    "id": 14814,
+    "rack": "rack-r4-09"
+   },
+   {
+    "id": 14828,
+    "rack": "rack-r4-10"
+   },
+   {
+    "id": 14842,
+    "rack": "rack-r4-11"
+   },
+   {
+    "id": 14856,
+    "rack": "rack-r4-12"
+   },
+   {
+    "id": 14870,
+    "rack": "rack-r4-13"
+   },
+   {
+    "id": 14884,
+    "rack": "rack-r4-14"
+   },
+   {
+    "id": 14898,
+    "rack": "rack-r4-15"
+   },
+   {
+    "id": 14912,
+    "rack": "rack-r4-16"
+   },
+   {
+    "id": 14926,
+    "rack": "rack-r5-01"
+   },
+   {
+    "id": 14940,
+    "rack": "rack-r5-02"
+   },
+   {
+    "id": 14954,
+    "rack": "rack-r5-03"
+   },
+   {
+    "id": 14968,
+    "rack": "rack-r5-04"
+   },
+   {
+    "id": 14982,
+    "rack": "rack-r5-05"
+   },
+   {
+    "id": 14996,
+    "rack": "rack-r5-06"
+   },
+   {
+    "id": 15010,
+    "rack": "rack-r5-07"
+   },
+   {
+    "id": 15024,
+    "rack": "rack-r5-08"
+   },
+   {
+    "id": 15038,
+    "rack": "rack-r5-09"
+   },
+   {
+    "id": 15052,
+    "rack": "rack-r5-10"
+   },
+   {
+    "id": 15066,
+    "rack": "rack-r5-11"
+   },
+   {
+    "id": 15080,
+    "rack": "rack-r5-12"
+   },
+   {
+    "id": 15094,
+    "rack": "rack-r5-13"
+   },
+   {
+    "id": 15108,
+    "rack": "rack-r5-14"
+   },
+   {
+    "id": 15122,
+    "rack": "rack-r5-15"
+   },
+   {
+    "id": 15136,
+    "rack": "rack-r5-16"
+   },
+   {
+    "id": 15150,
+    "rack": "rack-r6-01"
+   },
+   {
+    "id": 15164,
+    "rack": "rack-r6-02"
+   },
+   {
+    "id": 15178,
+    "rack": "rack-r6-03"
+   },
+   {
+    "id": 15192,
+    "rack": "rack-r6-04"
+   },
+   {
+    "id": 15206,
+    "rack": "rack-r6-05"
+   },
+   {
+    "id": 15220,
+    "rack": "rack-r6-06"
+   },
+   {
+    "id": 15234,
+    "rack": "rack-r6-07"
+   },
+   {
+    "id": 15248,
+    "rack": "rack-r6-08"
+   },
+   {
+    "id": 15262,
+    "rack": "rack-r6-09"
+   },
+   {
+    "id": 15276,
+    "rack": "rack-r6-10"
+   },
+   {
+    "id": 15290,
+    "rack": "rack-r6-11"
+   },
+   {
+    "id": 15304,
+    "rack": "rack-r6-12"
+   },
+   {
+    "id": 15318,
+    "rack": "rack-r6-13"
+   },
+   {
+    "id": 15332,
+    "rack": "rack-r6-14"
+   },
+   {
+    "id": 15346,
+    "rack": "rack-r6-15"
+   },
+   {
+    "id": 15360,
+    "rack": "rack-r6-16"
+   },
+   {
+    "id": 15374,
+    "rack": "rack-r7-01"
+   },
+   {
+    "id": 15388,
+    "rack": "rack-r7-02"
+   },
+   {
+    "id": 15402,
+    "rack": "rack-r7-03"
+   },
+   {
+    "id": 15416,
+    "rack": "rack-r7-04"
+   },
+   {
+    "id": 15430,
+    "rack": "rack-r7-05"
+   },
+   {
+    "id": 15444,
+    "rack": "rack-r7-06"
+   },
+   {
+    "id": 15458,
+    "rack": "rack-r7-07"
+   },
+   {
+    "id": 15472,
+    "rack": "rack-r7-08"
+   },
+   {
+    "id": 15486,
+    "rack": "rack-r7-09"
+   },
+   {
+    "id": 15500,
+    "rack": "rack-r7-10"
+   },
+   {
+    "id": 15514,
+    "rack": "rack-r7-11"
+   },
+   {
+    "id": 15528,
+    "rack": "rack-r7-12"
+   },
+   {
+    "id": 15542,
+    "rack": "rack-r7-13"
+   },
+   {
+    "id": 15556,
+    "rack": "rack-r7-14"
+   },
+   {
+    "id": 15570,
+    "rack": "rack-r7-15"
+   },
+   {
+    "id": 15584,
+    "rack": "rack-r7-16"
+   },
+   {
+    "id": 15598,
+    "rack": "rack-r8-01"
+   },
+   {
+    "id": 15612,
+    "rack": "rack-r8-02"
+   },
+   {
+    "id": 15626,
+    "rack": "rack-r8-03"
+   },
+   {
+    "id": 15640,
+    "rack": "rack-r8-04"
+   },
+   {
+    "id": 15654,
+    "rack": "rack-r8-05"
+   },
+   {
+    "id": 15668,
+    "rack": "rack-r8-06"
+   },
+   {
+    "id": 15682,
+    "rack": "rack-r8-07"
+   },
+   {
+    "id": 15696,
+    "rack": "rack-r8-08"
+   },
+   {
+    "id": 15710,
+    "rack": "rack-r8-09"
+   },
+   {
+    "id": 15724,
+    "rack": "rack-r8-10"
+   },
+   {
+    "id": 15738,
+    "rack": "rack-r8-11"
+   },
+   {
+    "id": 15752,
+    "rack": "rack-r8-12"
+   },
+   {
+    "id": 15766,
+    "rack": "rack-r8-13"
+   },
+   {
+    "id": 15780,
+    "rack": "rack-r8-14"
+   },
+   {
+    "id": 15794,
+    "rack": "rack-r8-15"
+   },
+   {
+    "id": 15808,
+    "rack": "rack-r8-16"
+   },
+   {
+    "id": 15822,
+    "rack": "rack-r9-01"
+   },
+   {
+    "id": 15836,
+    "rack": "rack-r9-02"
+   },
+   {
+    "id": 15850,
+    "rack": "rack-r9-03"
+   },
+   {
+    "id": 15864,
+    "rack": "rack-r9-04"
+   },
+   {
+    "id": 15878,
+    "rack": "rack-r9-05"
+   },
+   {
+    "id": 15892,
+    "rack": "rack-r9-06"
+   },
+   {
+    "id": 15906,
+    "rack": "rack-r9-07"
+   },
+   {
+    "id": 15920,
+    "rack": "rack-r9-08"
+   },
+   {
+    "id": 15934,
+    "rack": "rack-r9-09"
+   },
+   {
+    "id": 15948,
+    "rack": "rack-r9-10"
+   },
+   {
+    "id": 15962,
+    "rack": "rack-r9-11"
+   },
+   {
+    "id": 15976,
+    "rack": "rack-r9-12"
+   },
+   {
+    "id": 15990,
+    "rack": "rack-r9-13"
+   },
+   {
+    "id": 16004,
+    "rack": "rack-r9-14"
+   },
+   {
+    "id": 16018,
+    "rack": "rack-r9-15"
+   },
+   {
+    "id": 16032,
+    "rack": "rack-r9-16"
+   },
+   {
+    "id": 16046,
+    "rack": "rack-r10-01"
+   },
+   {
+    "id": 16060,
+    "rack": "rack-r10-02"
+   },
+   {
+    "id": 16074,
+    "rack": "rack-r10-03"
+   },
+   {
+    "id": 16088,
+    "rack": "rack-r10-04"
+   },
+   {
+    "id": 16102,
+    "rack": "rack-r10-05"
+   },
+   {
+    "id": 16116,
+    "rack": "rack-r10-06"
+   },
+   {
+    "id": 16130,
+    "rack": "rack-r10-07"
+   },
+   {
+    "id": 16144,
+    "rack": "rack-r10-08"
+   },
+   {
+    "id": 16158,
+    "rack": "rack-r10-09"
+   },
+   {
+    "id": 16172,
+    "rack": "rack-r10-10"
+   },
+   {
+    "id": 16186,
+    "rack": "rack-r10-11"
+   },
+   {
+    "id": 16200,
+    "rack": "rack-r10-12"
+   },
+   {
+    "id": 16214,
+    "rack": "rack-r10-13"
+   },
+   {
+    "id": 16228,
+    "rack": "rack-r10-14"
+   },
+   {
+    "id": 16242,
+    "rack": "rack-r10-15"
+   },
+   {
+    "id": 16256,
+    "rack": "rack-r10-16"
+   }
+  ],
+  "SELECT now_min FROM clock WHERE id = 0": [
+   {
+    "now_min": 60
+   }
+  ]
+ },
+ "calls": [
+  [
+   "diagnose_failure",
+   [
+    [
+     "node-1118"
+    ]
+   ]
+  ]
+ ]
+}

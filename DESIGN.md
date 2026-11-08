@@ -291,7 +291,7 @@ It comes back after the fixer is live. It needs, in the module: `service`, `serv
 
 ### 8.4 Contract map: what the fixer calls vs what the module has
 
-The agents code against `agents/squawk.py` (`Squawk`). `MockSquawk` implements it offline; `agents/squawk_http.py` (to build) implements it over SpacetimeDB's HTTP API: `POST /v1/database/squawk/sql` to read, `POST /v1/database/squawk/call/<reducer>` (JSON array of arguments) to act, `POST /v1/identity` once for the agent's token (`Authorization: Bearer`). Reducers don't return values, so a call whose answer the agent needs passes a `ticket` and reads the row back.
+The agents code against `agents/squawk.py` (`Squawk`). `MockSquawk` implements it offline; `agents/squawk_http.py` implements it over SpacetimeDB's HTTP API: `POST /v1/database/squawk/sql` to read, `POST /v1/database/squawk/call/<reducer>` (JSON array of arguments) to act, `POST /v1/identity` once for the agent's token (`Authorization: Bearer`). Reducers don't return values, so a call whose answer the agent needs passes a `ticket` and reads the row back.
 
 | Agent call (`squawk.py`) | Module today (`spacetime-init`) | To add in the module |
 | --- | --- | --- |
@@ -313,7 +313,7 @@ The agents code against `agents/squawk.py` (`Squawk`). `MockSquawk` implements i
 | Tenant node maintenance → `warn` | tenant holds its nodes → `deny` (§4.4) | align on `warn` |
 | *(dependency agent)* `feature()`, `features()`, `pages_since()`, `record_test()`, `resend_page()`, role `dependency_watch` | nothing | deferred with the agent (§8.3) |
 
-Nothing here touches the minimum demo. **Status (2026-11-07, late):** rows 1–3 of the build order are in the module on `integration` (`spacetimedb/test/agents.test.ts`): `decision.type/subject/data` on every row, `record_event`, the `remediation_agent` role (`node_repair` itself, `facility_work` only on a requester's behalf), `routine`/`note`/`on_behalf_of` on `request_work`, `finish_job`, `release_work(id, note)` with the stale-lock rule. `request_approval` is not a separate reducer: the adapter sends `request_work(..., on_behalf_of=requested_for)` and a `warn` verdict waits in `needs_approval` (feed type `approval_requested`). The tenant-node rule stays `deny` for a *working* tenant node; the fixer only touches failed ones, so nothing changes for it. Remaining: the HTTP adapter and `check_setup` against the live database, then the demo steps in §10.2.
+Nothing here touches the minimum demo. **Status (2026-11-07, late):** rows 1–3 of the build order are in the module on `integration` (`spacetimedb/test/agents.test.ts`): `decision.type/subject/data` on every row, `record_event`, the `remediation_agent` role (`node_repair` itself, `facility_work` only on a requester's behalf), `routine`/`note`/`on_behalf_of` on `request_work`, `finish_job`, `release_work(id, note)` with the stale-lock rule. `request_approval` is not a separate reducer: the adapter sends `request_work(..., on_behalf_of=requested_for)` and a `warn` verdict waits in `needs_approval` (feed type `approval_requested`). The tenant-node rule stays `deny` for a *working* tenant node; the fixer only touches failed ones, so nothing changes for it. The HTTP adapter (`agents/squawk_http.py`) and `check_setup` against the live database are done (2026-11-08); remaining: the demo steps in §10.2.
 
 ## 9. Security (Iteration 1 baseline)
 
@@ -366,6 +366,10 @@ Each fixer step takes a few seconds of model time on stage. Rehearse on Nemotron
 
 Steps 5a, 5b and 5d. Everything else is a bonus; steps 7–9 are the next layer, never a dependency.
 
+### 10.3b Operations scenarios (software updates, maintenance window)
+
+Two more scenarios on the backend runner (`scenario.ts`, modes `updates` and `maintenance`; steps in `spacetimedb/README.md`). They show the work scopes of §4.4 on screen (online vs drain-required updates, switch firmware, one piece of work per node, protection, approvals) and set up the fixer's routine work: refused routine requests, broken spares and a stale protection lease. The scenario never does the fixer's part; with the fixer connected, it picks those up from the feed. Live mode only in the view.
+
 ### 10.4 Backend scenario runner and diagnostics test bed
 
 The scenario runs on the backend (`scenario_start` / `scenario_next` / `scenario_goto`, `reset_demo`): each step acts as a scripted actor through the normal reducers, and the view only renders the tables. A fresh database instead holds a **diagnostics test bed**: the demo hall at T+3h with five incidents (degraded CDU, failed PDU, two correlated failures under a leaf with no alarm, an isolated node with an older failure outside the window, a tenant node under a failed CDU). The private `incident` table is the answer key for grading diagnostic agents; `seed_diagnostics` reloads it. Details: `spacetimedb/README.md`.
@@ -376,6 +380,8 @@ Two machines on one Tailscale network:
 
 - **Machine A** (dedicated backend box): `spacetime start` listening on its tailnet address (or all interfaces), the module published as `squawk`, the fixer agent (`python -m agents.fixer` with `SPACETIME_HOST` set to the local server), and the Brev port-forward for the primary model (`brev port-forward <machine> --port 8000:8000`). Keep the admin CLI identity here.
 - **Machine B** (presenter): the view with `VITE_SPACETIMEDB_URI=http://<machine-A-tailnet-ip>:3000` and `VITE_SPACETIMEDB_DB=squawk`. The browser's SpacetimeDB identity self-registers as the shift lead. Presenter keys call the backend's scenario reducers over the tailnet.
+
+**Or on SpacetimeDB Maincloud** (set up 2026-11-08): the module is published as `squawk-hackutd26`, so the view and the agents point at `https://maincloud.spacetimedb.com` from any network, with no Tailscale needed for the backend. The fixer and the Brev port-forward still run on one machine. Anyone who knows the database name can read the public tables there and connect, so open registration is closed (`bash dev.sh cloud lock`) once the presenter's browsers and the agents are registered. The local two-machine setup above stays as the fallback. Commands: the root `README.md`, "On SpacetimeDB Maincloud".
 
 Checklist and fallbacks: `HANDOFF.md` §8.
 
@@ -401,7 +407,7 @@ New ideas go into this table, not into the code.
 - **Security:** missing or invalid identity refused; out-of-scope row refused; every call logged; free text doesn't change verdicts; `record_event` only for agent roles, attributed to the caller.
 - **Scenario:** naive mode crashes twice; Squawk mode restarts once and the cooling lease is denied (`test/runner.test.ts`); steps 7–9 produce the expected `decision` rows.
 - **Contract (view):** the backend scenario, mapped through the view's `live/mapping.ts`, equals the frontend mock at every step (`test/frontend-contract.test.ts`).
-- **Contract (agents), to add:** the fixer's storyline gives the same verdicts on `MockSquawk` and on the live module through the HTTP adapter.
+- **Contract (agents)** (`tests/test_squawk_http.py`): the backend's answers after the maintenance scenario (recorded by `tests/fixtures/record_spacetime.py`), read through the HTTP adapter, give the same hall, issues and blockers as `MockSquawk` driven through the same story; plus the reducer arguments, the wire format and failing closed.
 - **Scale:** every limit in §7.2 (`npm run test:scale`).
 - **Fixer agent** (`tests/test_triage.py`, `tests/test_fixer.py`): triage sorts each issue type and each hand-off case correctly; the storyline fixes one issue of each type; tools outside the playbook, actions after a refusal, "done" without the result, the step budget and both outages all end safely.
 - **Model router** (`tests/test_llm_router.py`): failover to the fallback and back; fail closed when both are down.

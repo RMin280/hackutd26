@@ -140,7 +140,7 @@ hackutd26/
 │   ├── llm.py               # ModelRouter: Brev Nemotron first, OpenRouter Ultra (free) backup (no safety logic)
 │   ├── check_setup.py       # verifies keys, Nemotron tool calling, SpacetimeDB reachability
 │   ├── squawk.py            # Squawk interface the agents code against (contract: agents/README.md, DESIGN.md §8.4)
-│   ├── squawk_http.py       # (to build) the interface over SpacetimeDB's HTTP API
+│   ├── squawk_http.py       # the interface over SpacetimeDB's HTTP API (+ `setup`: the fixer's identity)
 │   ├── mock_squawk.py       # in-process simulated hall implementing it, for offline runs
 │   ├── mock_services.py     # simulated services for the (deferred) dependency agent
 │   ├── common/              # shared by the agents: issues, playbook + planning checks, model loop, event loop, feed
@@ -174,7 +174,8 @@ spacetime logs --server local squawk
 pip install -r requirements.txt     # or: uv venv .venv --python 3.11 && uv pip install -r requirements.txt
 cp .env.example .env                # then put the Brev endpoint, the OpenRouter key and the agent token in it (never commit .env)
 python -m agents.check_setup        # both model endpoints, a tool-call round trip, SpacetimeDB reachability (--no-llm: no model requests)
-python -m agents.fixer              # fixer agent storyline: today on the simulated hall; after the HTTP adapter, against the live backend (--scripted: no model requests)
+python -m agents.squawk_http setup  # once per database: the fixer's identity (token into .env), registered as fixer-agent
+python -m agents.fixer              # fixer agent: live backend when SPACETIME_DB is set, else the simulated hall (--scripted: no model requests; --mock; --once)
 pytest                              # agent tests
 ```
 
