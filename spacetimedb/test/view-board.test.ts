@@ -222,6 +222,9 @@ test('agent cards: one per agent, newest row sets the state, counts of fixes and
   assert.equal(waiting[0].state, 'waiting');
   const stopped = agentCards([fixerRow({ type: 'agent', verdict: 'warn', title: 'Stopped on node-1118: failed closed', data: 'not json' })]);
   assert.equal(stopped[0].state, 'stopped', 'bad data falls back to the verdict');
+  // The update agent (its own kind since the updater popups) keeps its card.
+  const updater = agentCards([fixerRow({ actor: 'update-agent', actorKind: 'updater', type: 'agent', title: 'Waiting on SQK-SIM-2026-0419', subject: 'SQK-SIM-2026-0419', data: JSON.stringify({ status: 'waiting' }) })]);
+  assert.deepEqual([updater[0]?.actor, updater[0]?.kind, updater[0]?.state], ['update-agent', 'updater', 'waiting']);
 });
 
 test('offline the mock’s leases still read as items', () => {
