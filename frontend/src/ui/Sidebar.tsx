@@ -64,6 +64,7 @@ export function Sidebar() {
   const open = useStore((s) => s.panels.sidebar);
   const legendOpen = useStore((s) => s.panels.legend);
   const toggle = useStore((s) => s.togglePanel);
+  const me = useStore((s) => s.me);
 
   const titles = stepTitles(mode);
   const steps = SCENARIOS[mode];
@@ -173,7 +174,7 @@ export function Sidebar() {
         )}
       </section>
 
-      <footer className="side-foot">Signed in as shift_lead · Hall A</footer>
+      <footer className="side-foot">{me} · shift lead</footer>
     </aside>
   );
 }
