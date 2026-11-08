@@ -5,7 +5,7 @@
 
 import { DbConnection } from '../module_bindings';
 import type { Site } from '../model/types';
-import { stepCount, useStore } from '../store';
+import { boardOnly, stepCount, useStore } from '../store';
 import { LIVE_DB, LIVE_URI } from './config';
 import { toEvents, toScenario, toSite, toWorld, type Tables } from './mapping';
 
@@ -17,6 +17,7 @@ const TABLES = [
   'margin',
   'job',
   'work',
+  'assignment', // the work board's bookkeeping; older bindings lack it and the board then shows no assignees
   'diagnosis',
   'placement',
   'decision',
@@ -148,7 +149,7 @@ function schedule(topology: boolean): void {
 function call(name: string, args: object, quiet = false): void {
   const fn = conn?.reducers[name];
   if (!fn) {
-    if (!quiet) useStore.setState({ caption: `Not connected to SpacetimeDB yet (${name}).`, playing: false });
+    if (!quiet) useStore.setState({ caption: `Not connected to SpacetimeDB yet (${name}).`, notice: `Not connected to SpacetimeDB yet (${name}).`, playing: false });
     return;
   }
   Promise.resolve()
@@ -156,7 +157,9 @@ function call(name: string, args: object, quiet = false): void {
     .catch((e: unknown) => {
       if (quiet) return;
       console.warn(`[squawk] ${name} failed`, e);
-      useStore.setState({ caption: `The backend refused ${name}: ${messageOf(e)}`, playing: false });
+      const text = `The backend refused ${name}: ${messageOf(e)}`;
+      // The caption is the hall's narration; the notice is the work board's status line.
+      useStore.setState({ caption: text, notice: text, playing: false });
     });
 }
 
@@ -189,6 +192,17 @@ function takeOverControls(): void {
     // The tech gull's repairs: an ordinary state change, checked and recorded by the backend.
     repair: ({ kind, id }) =>
       kind === 'part' ? call('setPartState', { part: id, state: 'ok' }) : call('setNodeState', { node: id, state: 'ok' }),
+    // The work board's buttons: bookkeeping on leases the interlock already decided (accept_work /
+    // complete_work). The control room's identity is a shift lead, so it may take on, move and
+    // complete any maintenance lease; a refusal shows in the caption like any other.
+    acceptWork: (id) => {
+      useStore.setState({ notice: '' });
+      call('acceptWork', { id: BigInt(id) });
+    },
+    completeWork: (id, note) => {
+      useStore.setState({ notice: '' });
+      call('completeWork', { id: BigInt(id), note });
+    },
   });
 }
 
@@ -205,9 +219,11 @@ function attach(c: LiveConnection): void {
     table.onDelete(() => schedule(topology));
     table.onUpdate?.(() => schedule(false));
   }
-  // The control room acts as a shift lead. Refused quietly if this identity is already
-  // registered (a reload) or open registration is off (then an admin must register_actor it).
-  call('selfRegister', { name: 'Control room', role: 'shift_lead', rows: [] }, true);
+  // The control room acts as a shift lead; a board opened on its own (?view=work) on another device
+  // is a technician's screen, so it can take work on but not run the scenario. Refused quietly if
+  // this identity is already registered (a reload, or the same browser opening both: it stays what
+  // it first registered as) or open registration is off (then an admin must register_actor it).
+  call('selfRegister', boardOnly ? { name: 'Floor tech', role: 'technician', rows: [] } : { name: 'Control room', role: 'shift_lead', rows: [] }, true);
   c.subscriptionBuilder()
     .onApplied(() => schedule(true))
     .onError((...args: unknown[]) => {

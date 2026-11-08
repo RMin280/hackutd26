@@ -34,9 +34,11 @@ import {
 } from "spacetimedb";
 
 // Import all reducer arg schemas
+import AcceptWorkReducer from "./accept_work_reducer";
 import AdvanceClockReducer from "./advance_clock_reducer";
 import ApproveWorkReducer from "./approve_work_reducer";
 import ClaimAdminReducer from "./claim_admin_reducer";
+import CompleteWorkReducer from "./complete_work_reducer";
 import DiagnoseFailureReducer from "./diagnose_failure_reducer";
 import FinishJobReducer from "./finish_job_reducer";
 import NaiveRestartReducer from "./naive_restart_reducer";
@@ -64,6 +66,7 @@ import SetPartStateReducer from "./set_part_state_reducer";
 
 // Import all table schema definitions
 import AisleRow from "./aisle_table";
+import AssignmentRow from "./assignment_table";
 import ClaimRow from "./claim_table";
 import ClockRow from "./clock_table";
 import DecisionRow from "./decision_table";
@@ -94,6 +97,17 @@ const tablesSchema = __schema({
       { name: 'aisle_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, AisleRow),
+  assignment: __table({
+    name: 'assignment',
+    indexes: [
+      { accessor: 'work', name: 'assignment_work_idx_btree', algorithm: 'btree', columns: [
+        'work',
+      ] },
+    ],
+    constraints: [
+      { name: 'assignment_work_key', constraint: 'unique', columns: ['work'] },
+    ],
+  }, AssignmentRow),
   claim: __table({
     name: 'claim',
     indexes: [
@@ -282,9 +296,11 @@ const tablesSchema = __schema({
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
+  __reducerSchema("accept_work", AcceptWorkReducer),
   __reducerSchema("advance_clock", AdvanceClockReducer),
   __reducerSchema("approve_work", ApproveWorkReducer),
   __reducerSchema("claim_admin", ClaimAdminReducer),
+  __reducerSchema("complete_work", CompleteWorkReducer),
   __reducerSchema("diagnose_failure", DiagnoseFailureReducer),
   __reducerSchema("finish_job", FinishJobReducer),
   __reducerSchema("naive_restart", NaiveRestartReducer),

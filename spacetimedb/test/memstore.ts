@@ -7,6 +7,7 @@ import type { New, Store } from '../src/core/store';
 import type {
   ActorRow,
   AisleRow,
+  AssignmentRow,
   AuditInput,
   ClaimRow,
   DecisionRow,
@@ -50,6 +51,7 @@ export class MemStore implements Store {
   claims = new Map<bigint, ClaimRow>();
   claimsByResource = new Map<string, Set<bigint>>();
   claimsByWork = new Map<bigint, Set<bigint>>();
+  assignments = new Map<bigint, AssignmentRow>();
   failures: FailureRow[] = [];
   diagnoses = new Map<bigint, DiagnosisRow>();
   placements = new Map<bigint, PlacementRow>();
@@ -176,6 +178,12 @@ export class MemStore implements Store {
     }
     this.claimsByWork.delete(work);
   }
+  assignment(work: bigint) {
+    return this.assignments.get(work);
+  }
+  putAssignment(row: AssignmentRow) {
+    this.assignments.set(row.work, { ...row, repaired: [...row.repaired] });
+  }
   failuresSince(min: number) {
     return this.failures.filter((f) => f.atMin >= min);
   }
@@ -234,6 +242,7 @@ export class MemStore implements Store {
       this.claims,
       this.claimsByResource,
       this.claimsByWork,
+      this.assignments,
       this.diagnoses,
       this.placements,
       this.incidents,

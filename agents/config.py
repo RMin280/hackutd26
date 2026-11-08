@@ -57,6 +57,14 @@ class Endpoint:
     def label(self) -> str:
         return f"{self.role} ({self.provider}, {self.model or 'no model set'})"
 
+    @property
+    def display(self) -> str:
+        """The model and where it ran, as the view shows it next to the agent's plan."""
+        if self.provider == "local":
+            return "scripted stand-in, no model"
+        where = "OpenRouter" if self.is_openrouter else "NVIDIA API" if self.provider == "nvidia" else "our own server (Brev)"
+        return f"{self.model or 'unnamed model'} via {where}"
+
 
 @dataclass(frozen=True)
 class Settings:

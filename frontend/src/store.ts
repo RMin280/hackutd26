@@ -21,6 +21,18 @@ export interface Hover {
 
 export type PanelName = 'sidebar' | 'feed' | 'metrics' | 'caption' | 'legend';
 
+/** What fills the window: the 3D hall with its HUD, or the work board (what the floor sees). */
+export type ViewName = 'hall' | 'board';
+
+/** `?view=work` opens the board on its own, for a second screen: no hall is drawn. */
+export const boardOnly = (() => {
+  try {
+    return new URLSearchParams(window.location.search).get('view') === 'work';
+  } catch {
+    return false;
+  }
+})();
+
 interface CameraRequest {
   seq: number;
   target: FocusTarget;
@@ -42,6 +54,12 @@ interface AppState {
   follow: boolean;
   tech: boolean; // the tech gull on duty: walks to whatever is broken and repairs it (T)
   panels: Record<PanelName, boolean>; // true = open
+  view: ViewName; // the hall, or the work board (B)
+  boardFilter: string; // the board's trade filter: 'all' or a trade name
+  boardSelection: string | null; // the work item open in the board's detail pane
+  notice: string; // the work board's status line: a refusal from the backend, or why a button did nothing
+  /** How the backend knows this screen: the control room is a shift lead, a stand-alone board a technician. */
+  me: string;
 
   setMode: (m: Mode) => void;
   next: () => void;
@@ -58,7 +76,17 @@ interface AppState {
   toggleTech: () => void;
   /** Marks a failed or degraded node or part repaired. The mock does it here; live mode asks the backend. */
   repair: (target: RepairTarget) => void;
+  setView: (v: ViewName) => void;
+  toggleView: () => void;
+  setBoardFilter: (trade: string) => void;
+  selectWork: (id: string | null) => void;
+  setNotice: (text: string) => void;
+  /** The work board's buttons. Bookkeeping on the backend (accept_work / complete_work); the mock has no work table. */
+  acceptWork: (id: string) => void;
+  completeWork: (id: string, note: string) => void;
 }
+
+const MOCK_BOARD_CAPTION = 'The work board acts on the backend: start the view in live mode (VITE_SPACETIMEDB_URI) to take work on or complete it.';
 
 const site = buildSite();
 
@@ -77,6 +105,11 @@ export const useStore = create<AppState>((set, get) => ({
   follow: true,
   tech: false,
   panels: { sidebar: true, feed: true, metrics: true, caption: true, legend: true },
+  view: boardOnly ? 'board' : 'hall',
+  boardFilter: 'all',
+  boardSelection: null,
+  notice: '',
+  me: boardOnly ? 'Floor tech' : 'Control room',
 
   setMode: (mode) => {
     set({ mode });
@@ -172,6 +205,14 @@ export const useStore = create<AppState>((set, get) => ({
     if (!done) return;
     set({ world: done.world, events: [{ ...done.event, seq: s.events.length + 1, time: done.world.now }, ...s.events] });
   },
+
+  setView: (view) => set({ view }),
+  toggleView: () => set((s) => ({ view: boardOnly ? 'board' : s.view === 'hall' ? 'board' : 'hall' })),
+  setBoardFilter: (boardFilter) => set({ boardFilter }),
+  selectWork: (boardSelection) => set({ boardSelection }),
+  setNotice: (notice) => set({ notice }),
+  acceptWork: () => set({ notice: MOCK_BOARD_CAPTION }),
+  completeWork: () => set({ notice: MOCK_BOARD_CAPTION }),
 }));
 
 export const stepCount = (mode: Mode) => SCENARIOS[mode].length;

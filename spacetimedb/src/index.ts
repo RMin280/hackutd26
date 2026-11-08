@@ -158,6 +158,21 @@ const claim = table(
   },
 );
 
+// Who is doing a piece of maintenance work (the work board): accept_work / complete_work.
+const assignment = table(
+  { public: true },
+  {
+    work: t.u64().primaryKey(), // the work row
+    assignee: t.string(), // actor name
+    assigneeRole: t.string(),
+    acceptedAt: t.i32(), // simulated minute, -1 = never accepted
+    completedBy: t.string(), // '' until completed
+    completedAt: t.i32(), // -1 until completed
+    repaired: t.array(t.string()), // targets marked ok on completion
+    note: t.string(), // completion note, data only
+  },
+);
+
 const failure = table(
   { public: true },
   {
@@ -312,6 +327,7 @@ const spacetimedb = schema({
   job,
   work,
   claim,
+  assignment,
   failure,
   diagnosis,
   placement,
@@ -394,6 +410,11 @@ function storeFor(ctx: Ctx): Store {
     deleteClaimsOf: (workId) => {
       for (const c of all(db.claim.work.filter(workId))) db.claim.id.delete(c.id);
     },
+    assignment: (workId) => db.assignment.work.find(workId) ?? undefined,
+    putAssignment: (row) => {
+      if (db.assignment.work.find(row.work)) db.assignment.work.update(row);
+      else db.assignment.insert(row);
+    },
     failuresSince: (min) => all(db.failure.iter()).filter((f) => f.atMin >= min),
     insertFailure: (row) => {
       db.failure.insert({ ...row, id: 0n });
@@ -423,6 +444,7 @@ function storeFor(ctx: Ctx): Store {
 
     clearFacility: () => {
       for (const r of all(db.incident.iter())) db.incident.id.delete(r.id);
+      for (const r of all(db.assignment.iter())) db.assignment.work.delete(r.work);
       for (const r of all(db.claim.iter())) db.claim.id.delete(r.id);
       for (const r of all(db.work.iter())) db.work.id.delete(r.id);
       for (const r of all(db.decision.iter())) db.decision.seq.delete(r.seq);
@@ -573,6 +595,16 @@ export const rejectWork = spacetimedb.reducer({ id: t.u64(), note: t.string() },
 /** The requester, a shift lead, or the fixer for a protection lock whose job has finished. */
 export const releaseWork = spacetimedb.reducer({ id: t.u64(), note: t.string() }, (ctx, { id, note }) =>
   run(ctx, (s, me) => cmd.releaseWork(s, me, id, note)),
+);
+
+// ---------------------------------------------------------------- the work board: who does what
+
+/** A worker takes a maintenance lease on (technician, facility, shift lead). Bookkeeping, not a verdict. */
+export const acceptWork = spacetimedb.reducer({ id: t.u64() }, (ctx, { id }) => run(ctx, (s, me) => cmd.acceptWork(s, me, id)));
+
+/** The work is done: the active lease ends now and a failed or degraded hardware target comes back ok. */
+export const completeWork = spacetimedb.reducer({ id: t.u64(), note: t.string() }, (ctx, { id, note }) =>
+  run(ctx, (s, me) => cmd.completeWork(s, me, id, note)),
 );
 
 // ---------------------------------------------------------------- agent events (DESIGN.md §4.3)

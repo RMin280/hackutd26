@@ -254,6 +254,7 @@ class ToolBox:
             steps=[asdict(s) for s in steps],
             revision=len(run.plans) - 1,
             change=reason,
+            model=str(run.extra.get("model", "")),
         )
         return {"accepted": True, "steps": len(steps)}
 

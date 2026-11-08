@@ -27,6 +27,18 @@ export const Aisle = __t.object("Aisle", {
 });
 export type Aisle = __Infer<typeof Aisle>;
 
+export const Assignment = __t.object("Assignment", {
+  work: __t.u64(),
+  assignee: __t.string(),
+  assigneeRole: __t.string(),
+  acceptedAt: __t.i32(),
+  completedBy: __t.string(),
+  completedAt: __t.i32(),
+  repaired: __t.array(__t.string()),
+  note: __t.string(),
+});
+export type Assignment = __Infer<typeof Assignment>;
+
 export const Audit = __t.object("Audit", {
   id: __t.u64(),
   at: __t.timestamp(),

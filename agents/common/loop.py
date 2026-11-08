@@ -107,6 +107,7 @@ def run_agent(
             calls += 1
             if reply.endpoint.label not in served:
                 served.append(reply.endpoint.label)
+            run.extra["model"] = reply.endpoint.display  # the plan row says which Nemotron wrote it, and where
             message = reply.message
             messages.append(history_entry(message))
             if not message.tool_calls:
